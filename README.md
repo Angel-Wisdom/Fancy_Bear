@@ -21,23 +21,54 @@
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Browser :5173                     │
-│            React + Vite (client/)                   │
-└──────────────────────┬──────────────────────────────┘
-                       │ /api/*  (proxied)
-┌──────────────────────▼──────────────────────────────┐
-│              Node.js Express :3001                  │
-│                  (server/)                          │
-│  auth · customers · documents · verify · reports   │
-└────────┬─────────────────────────────────┬──────────┘
-         │ JSON store                      │ http proxy
-         ▼                                 ▼
-  suraksha.store.json          ┌───────────────────────┐
-  (no DB required)             │  Flask Aadhaar QR :5000│
-                               │      (aadhar/)         │
-                               │  pyzbar · pyaadhaar    │
-                               └───────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│                        BROWSER / CLIENT                        │
+│         Next.js 14 (React) — Single-Page App (Port 3000)       │
+│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────┐ │
+│  │ File Dropzone│  │  Risk Meter  │  │  ELA Heatmap Viewer   │ │
+│  │  (drag-drop) │  │  (0–100 SVG) │  │  (Original ↔ Heatmap) │ │
+│  └──────────────┘  └──────────────┘  └───────────────────────┘ │
+└───────────────────────────┬────────────────────────────────────┘
+                            │ HTTP POST (FormData)
+                            ▼
+┌────────────────────────────────────────────────────────────────┐
+│                    NEXT.JS API LAYER (Node.js)                  │
+│  /api/analyze   /api/cross-ref   /api/report   /api/audit      │
+│         Bridges frontend → Python via child process spawn      │
+└───────────────────────────┬────────────────────────────────────┘
+                            │ subprocess execFile (JSON stdout)
+                            ▼
+┌────────────────────────────────────────────────────────────────┐
+│               PYTHON ANALYSIS ENGINE (One-shot per request)    │
+│                                                                │
+│  ┌────────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────┐ │
+│  │ Classifier │  │ Tesseract│  │ pyzbar   │  │ PyMuPDF     │ │
+│  │ (keyword + │  │ OCR      │  │ QR Decode│  │ PDF Parser  │ │
+│  │  regex)    │  │ (4 PSMs) │  │          │  │             │ │
+│  └────────────┘  └──────────┘  └──────────┘  └─────────────┘ │
+│                                                                │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │              DOCUMENT MODULES                           │  │
+│  │  Aadhaar | PAN | Passport | Bank Stmt | ITR | Land Rec  │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                                                                │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │           UNIVERSAL FORENSIC ENGINES                    │  │
+│  │     ELA  |  Metadata  |  Clone Detect  |  Font Check   │  │
+│  │                Noise Analysis                           │  │
+│  └─────────────────────────────────────────────────────────┘  │
+│                                                                │
+│  ┌─────────────────────────────────────────────────────────┐  │
+│  │        WEIGHTED RISK SCORER → 0–100 (LOW→CRITICAL)      │  │
+│  └─────────────────────────────────────────────────────────┘  │
+└───────────────────────────┬────────────────────────────────────┘
+                            │
+             ┌──────────────┴──────────────┐
+             ▼                             ▼
+┌─────────────────────┐       ┌────────────────────────┐
+│  SQLite (Prisma)    │       │  LLM Report Generator  │
+│  Audit Log Trail    │       │  (z-ai-sdk + fallback) │
+└─────────────────────┘       └────────────────────────┘
 ```
 
 **Three services, all offline — no cloud dependency:**
@@ -49,6 +80,50 @@
 | `aadhaar` | Python 3.11 + Flask | 5000 | Aadhaar QR decode microservice |
 
 ---
+
+## 📄 Supported Document Types
+
+| # | Document | Signature Detection Method |
+|---|----------|--------------------------|
+| 1 | **Aadhaar Card** | QR decode + OCR cross-reference + UID validation |
+| 2 | **PAN Card** | Format regex + 4th/5th char structural logic |
+| 3 | **Passport** | ICAO 9303 MRZ checksum (5 check digits) |
+| 4 | **Bank Statement** | Balance continuity math (running total verification) |
+| 5 | **ITR Filing** | Income computation cross-check + AY validation |
+| 6 | **Land Record** | Multi-state portal detection + survey number extraction |
+
+---
+
+## 🚶 Workflow (Single Document Mode)
+
+```
+STEP 1: Upload
+  → Drag-and-drop or click-to-browse
+  → Accepts JPG, PNG, WEBP, BMP, PDF
+
+STEP 2: Classify
+  → Keyword + regex matching on OCR text
+  → Auto-identifies: Aadhaar / PAN / Passport / Bank Stmt / ITR / Land Record
+
+STEP 3: Deep Forensic Analysis
+  → Document-specific validations (see below)
+  → 3 Universal engines run in parallel (ELA, Metadata, Clone/Font/Noise)
+
+STEP 4: Risk Score
+  → Weighted signal aggregation → 0–100 score
+  → Levels: 🟢 LOW (0–20) | 🟡 MEDIUM (21–45) | 🟠 HIGH (46–70) | 🔴 CRITICAL (71–100)
+
+STEP 5: Results Dashboard
+  → Circular risk gauge
+  → Signal breakdown (Pass ✅ / Fail ❌ / Warning ⚠️)
+  → ELA heatmap toggle (Original ↔ Tamper Map)
+  → Extracted fields (Name, UID, DOB, etc.)
+
+STEP 6: AI Underwriter Report
+  → LLM-generated executive summary
+  → Recommended action: APPROVE / MANUAL REVIEW / REJECT
+```
+
 
 ## Features
 

@@ -1,0 +1,74 @@
+# ═══════════════════════════════════════════════════════════════
+#  SuRaksha 2.0 — Docker Compose
+#  One command to start everything:  docker compose up --build
+#
+#  Services:
+#    aadhaar   → Flask Aadhaar QR microservice  :5000 (internal)
+#    server    → Node.js Express API             :3001
+#    client    → React / Vite dev server         :5173  ← open this in browser
+# ═══════════════════════════════════════════════════════════════
+version: '3.9'
+
+services:
+
+  # ── 1. Flask Aadhaar QR Microservice ──────────────────────────
+  aadhaar:
+    build:
+      context: ./aadhar
+      dockerfile: Dockerfile
+    container_name: suraksha-aadhaar
+    restart: unless-stopped
+    # Not exposed to host — only the Node server needs to reach it
+    expose:
+      - "5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── 2. Node.js Express API Server ─────────────────────────────
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: suraksha-server
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      # Tell the Node server to reach Flask by Docker service name
+      - AADHAAR_SERVICE_HOST=aadhaar
+      - AADHAAR_SERVICE_PORT=5000
+      - PORT=3001
+    volumes:
+      # Persist the JSON data store across restarts
+      - ./server/suraksha.store.json:/app/suraksha.store.json
+    depends_on:
+      aadhaar:
+        condition: service_healthy
+
+  # ── 3. React / Vite Client Dev Server ─────────────────────────
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: suraksha-client
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      # Vite proxy points to the Node server by Docker service name
+      - VITE_API_TARGET=http://server:3001
+    volumes:
+      # Mount source for hot-reload — changes reflect instantly
+      - ./client/src:/app/src
+      - ./client/public:/app/public
+      - ./client/index.html:/app/index.html
+    depends_on:
+      - server
+
+networks:
+  default:
+    name: suraksha-network

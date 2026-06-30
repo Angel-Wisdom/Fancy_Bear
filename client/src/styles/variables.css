@@ -1,0 +1,261 @@
+:root {
+  --bg: #07111f;
+  --bg-alt: #0c1728;
+  --panel: rgba(10, 21, 37, 0.82);
+  --panel-border: rgba(216, 177, 91, 0.18);
+  --text: #ecf2f8;
+  --muted: #97a8bd;
+  --gold: #d8b15b;
+  --gold-soft: rgba(216, 177, 91, 0.18);
+  --red: #e77756;
+  --green: #56c596;
+  --blue: #7893ff;
+  --radius-xl: 28px;
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+  --sidebar-width: 290px;
+}
+/* ============================================================
+   SURAKSHA 2.0 — Design Tokens
+   Canara Bank Brand: Gold #D4A843, Deep Navy #0A1628, Accent Blue #1E88E5
+   ============================================================ */
+
+:root {
+  /* ── Brand Colors ── */
+  --color-gold:          #D4A843;
+  --color-gold-light:    #E8C97A;
+  --color-gold-dark:     #B08A2E;
+  --color-gold-muted:    rgba(212, 168, 67, 0.15);
+  --color-gold-glow:     rgba(212, 168, 67, 0.35);
+
+  --color-navy:          #0A1628;
+  --color-navy-light:    #0F2140;
+  --color-navy-lighter:  #152A4A;
+  --color-navy-dark:     #060E1A;
+
+  --color-accent:        #1E88E5;
+  --color-accent-light:  #42A5F5;
+  --color-accent-dark:   #1565C0;
+  --color-accent-muted:  rgba(30, 136, 229, 0.15);
+  --color-accent-glow:   rgba(30, 136, 229, 0.30);
+
+  /* ── Semantic Colors ── */
+  --color-success:       #00C853;
+  --color-success-bg:    rgba(0, 200, 83, 0.12);
+  --color-success-border:rgba(0, 200, 83, 0.30);
+
+  --color-warning:       #FFB300;
+  --color-warning-bg:    rgba(255, 179, 0, 0.12);
+  --color-warning-border:rgba(255, 179, 0, 0.30);
+
+  --color-danger:        #FF1744;
+  --color-danger-bg:     rgba(255, 23, 68, 0.12);
+  --color-danger-border: rgba(255, 23, 68, 0.30);
+
+  --color-info:          #29B6F6;
+  --color-info-bg:       rgba(41, 182, 246, 0.12);
+  --color-info-border:   rgba(41, 182, 246, 0.30);
+
+  --color-orange:        #FF6D00;
+  --color-orange-bg:     rgba(255, 109, 0, 0.12);
+  --color-orange-border: rgba(255, 109, 0, 0.30);
+
+  /* ── Surface Colors ── */
+  --surface-base:        #0A1628;
+  --surface-raised:      rgba(15, 33, 64, 0.65);
+  --surface-overlay:     rgba(21, 42, 74, 0.70);
+  --surface-card:        rgba(15, 33, 64, 0.50);
+  --surface-card-hover:  rgba(21, 42, 74, 0.65);
+  --surface-input:       rgba(10, 22, 40, 0.80);
+  --surface-modal:       rgba(15, 33, 64, 0.90);
+
+  /* ── Text Colors ── */
+  --text-primary:        #F0F2F5;
+  --text-secondary:      #94A3B8;
+  --text-tertiary:       #64748B;
+  --text-disabled:       #475569;
+  --text-inverse:        #0A1628;
+  --text-gold:           #D4A843;
+
+  /* ── Border Colors ── */
+  --border-subtle:       rgba(148, 163, 184, 0.10);
+  --border-default:      rgba(148, 163, 184, 0.18);
+  --border-strong:       rgba(148, 163, 184, 0.30);
+  --border-gold:         rgba(212, 168, 67, 0.40);
+  --border-accent:       rgba(30, 136, 229, 0.40);
+
+  /* ── Typography ── */
+  --font-sans:           'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:           'Cascadia Code', 'Fira Code', 'Consolas', 'Monaco', monospace;
+
+  --text-xs:             0.75rem;    /* 12px */
+  --text-sm:             0.8125rem;  /* 13px */
+  --text-base:           0.875rem;   /* 14px */
+  --text-md:             1rem;       /* 16px */
+  --text-lg:             1.125rem;   /* 18px */
+  --text-xl:             1.25rem;    /* 20px */
+  --text-2xl:            1.5rem;     /* 24px */
+  --text-3xl:            1.875rem;   /* 30px */
+  --text-4xl:            2.25rem;    /* 36px */
+  --text-5xl:            3rem;       /* 48px */
+
+  --weight-regular:      400;
+  --weight-medium:       500;
+  --weight-semibold:     600;
+  --weight-bold:         700;
+
+  --leading-tight:       1.25;
+  --leading-normal:      1.5;
+  --leading-relaxed:     1.75;
+
+  /* ── Spacing Scale ── */
+  --space-0:   0;
+  --space-1:   0.25rem;   /* 4px */
+  --space-2:   0.5rem;    /* 8px */
+  --space-3:   0.75rem;   /* 12px */
+  --space-4:   1rem;      /* 16px */
+  --space-5:   1.25rem;   /* 20px */
+  --space-6:   1.5rem;    /* 24px */
+  --space-7:   1.75rem;   /* 28px */
+  --space-8:   2rem;      /* 32px */
+  --space-10:  2.5rem;    /* 40px */
+  --space-12:  3rem;      /* 48px */
+  --space-16:  4rem;      /* 64px */
+  --space-20:  5rem;      /* 80px */
+
+  /* ── Border Radius ── */
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-2xl:  24px;
+  --radius-full: 9999px;
+
+  /* ── Shadows ── */
+  --shadow-sm:     0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-md:     0 4px 12px rgba(0, 0, 0, 0.30);
+  --shadow-lg:     0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-xl:     0 16px 48px rgba(0, 0, 0, 0.40);
+  --shadow-glow-gold:   0 0 20px rgba(212, 168, 67, 0.20), 0 0 60px rgba(212, 168, 67, 0.08);
+  --shadow-glow-accent: 0 0 20px rgba(30, 136, 229, 0.20), 0 0 60px rgba(30, 136, 229, 0.08);
+  --shadow-glow-danger: 0 0 20px rgba(255, 23, 68, 0.25);
+
+  /* ── Glassmorphism ── */
+  --glass-bg:        rgba(15, 33, 64, 0.45);
+  --glass-bg-strong: rgba(15, 33, 64, 0.65);
+  --glass-border:    rgba(148, 163, 184, 0.12);
+  --glass-blur:      blur(16px);
+  --glass-blur-lg:   blur(24px);
+
+  /* ── Layout ── */
+  --sidebar-width:        260px;
+  --sidebar-collapsed:    72px;
+  --header-height:        64px;
+  --content-max-width:    1440px;
+
+  /* ── Transitions ── */
+  --ease-out:       cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out:    cubic-bezier(0.45, 0, 0.55, 1);
+  --ease-spring:    cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast:  150ms;
+  --duration-base:  250ms;
+  --duration-slow:  400ms;
+
+  /* ── Z-Index Scale ── */
+  --z-base:      1;
+  --z-dropdown:  100;
+  --z-sticky:    200;
+  --z-sidebar:   300;
+  --z-header:    400;
+  --z-modal:     500;
+  --z-toast:     600;
+  --z-tooltip:   700;
+}
+
+/* ============================================================
+   Keyframe Animations
+   ============================================================ */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0); }
+  to   { transform: scale(1); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 4px rgba(255, 23, 68, 0.4); }
+  50%      { box-shadow: 0 0 16px rgba(255, 23, 68, 0.8), 0 0 32px rgba(255, 23, 68, 0.3); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes borderGlow {
+  0%, 100% { border-color: rgba(212, 168, 67, 0.3); }
+  50%      { border-color: rgba(212, 168, 67, 0.7); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+
+@keyframes gradientShift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes dashDraw {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes ripple {
+  to { transform: scale(4); opacity: 0; }
+}

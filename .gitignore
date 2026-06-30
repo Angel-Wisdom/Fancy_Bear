@@ -1,0 +1,175 @@
+# Dependencies
+node_modules/
+**/node_modules/
+venv/
+.pytest_cache/
+# Environment files
+__pycache__/
+reports/
+uploads/
+*.db
+
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build folders
+dist/
+build/
+.next/
+out/
+
+# Vite
+.vite/
+
+# Coverage
+coverage/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# Cache
+.cache/
+.parcel-cache/
+
+# Temporary files
+*.tmp
+*.temp
+
+
+# =========================
+# OS Files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+reports/
+uploads/
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python Packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Type Checkers
+.mypy_cache/
+.pyre/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# =========================
+# Next.js / Node.js
+# =========================
+node_modules/
+
+# Next.js Build
+.next/
+out/
+
+# Vercel
+.vercel/
+
+# Turbopack
+.turbo/
+
+# Build Artifacts
+dist/
+build/
+
+# Package Managers
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment Variables
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# =========================
+# IDEs & Editors
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# Database Files
+# =========================
+*.sqlite3
+*.db
+
+# =========================
+# Cache Files
+# =========================
+.cache/
+.parcel-cache/
+
+# =========================
+# Temporary Files
+# =========================
+tmp/
+temp/
+*.tmp
+
+# =========================
+# Docker
+# =========================
+.docker/
+
+# Docker Compose Override
+docker-compose.override.yml
+
+# =========================
+# Misc
+# =========================
+coverage/
+*.pid
+*.seed

@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sanrakshan — Aadhaar QR Verification</title>
+<style>
+/* ── Tokens ── */
+:root {
+  --background: oklch(0.9195 0.0169 88.0030);
+  --foreground: oklch(0.2350 0 0);
+  --card: oklch(0.9530 0.0156 86.4257);
+  --card-foreground: oklch(0.2350 0 0);
+  --primary: oklch(0.3012 0 0);
+  --primary-foreground: oklch(0.9169 0.0175 99.6160);
+  --secondary: oklch(0.8647 0.0201 87.5232);
+  --secondary-foreground: oklch(0.3012 0 0);
+  --muted: oklch(0.8340 0.0232 87.1630);
+  --muted-foreground: oklch(0.4688 0.0136 84.5932);
+  --accent: oklch(0.9169 0.0175 99.6160);
+  --destructive: oklch(0.5771 0.2152 27.3250);
+  --destructive-foreground: oklch(1.0000 0 0);
+  --success: oklch(0.527 0.154 150);
+  --border: oklch(0.8434 0.0231 87.1621);
+  --input: oklch(0.8434 0.0231 87.1621);
+  --ring: oklch(0.3012 0 0);
+  --radius: 0.5rem;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-serif: Georgia, 'Times New Roman', Times, serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, 'Liberation Mono', monospace;
+  --shadow-sm: 0px 4px 10px 0px hsl(0 0% 0% / 0.08), 0px 1px 2px -1px hsl(0 0% 0% / 0.08);
+  --shadow: 0px 4px 14px 0px hsl(0 0% 0% / 0.10), 0px 2px 4px -1px hsl(0 0% 0% / 0.08);
+}
+
+.dark {
+  --background: oklch(0.1913 0 0);
+  --foreground: oklch(0.9173 0.0133 82.4015);
+  --card: oklch(0.2264 0 0);
+  --card-foreground: oklch(0.9173 0.0133 82.4015);
+  --primary: oklch(0.8520 0.0205 100.6306);
+  --primary-foreground: oklch(0.3329 0 0);
+  --secondary: oklch(0.2520 0 0);
+  --secondary-foreground: oklch(0.8520 0.0205 100.6306);
+  --muted: oklch(0.2850 0 0);
+  --muted-foreground: oklch(0.6348 0.0113 81.7875);
+  --accent: oklch(0.3329 0 0);
+  --accent-foreground: oklch(0.8520 0.0205 100.6306);
+  --destructive: oklch(0.6368 0.2078 25.3313);
+  --destructive-foreground: oklch(1.0000 0 0);
+  --success: oklch(0.65 0.15 150);
+  --border: oklch(0.2931 0 0);
+  --input: oklch(0.2931 0 0);
+  --ring: oklch(0.8520 0.0205 100.6306);
+  --shadow-sm: 0px 6px 15px 0px hsl(0 0% 0% / 0.30), 0px 1px 2px -1px hsl(0 0% 0% / 0.30);
+  --shadow: 0px 6px 20px 0px hsl(0 0% 0% / 0.40), 0px 2px 4px -1px hsl(0 0% 0% / 0.30);
+}
+
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+input, button, textarea { font: inherit; }
+
+/* ── Base ── */
+body {
+  font-family: var(--font-sans);
+  background: var(--background);
+  color: var(--foreground);
+  line-height: 1.55;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: 0.01em;
+}
+
+/* ── Bar ── */
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  height: 52px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  flex-shrink: 0;
+}
+.bar-brand {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+.bar-title {
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+}
+.bar-sub {
+  font-size: 0.62rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.bar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.offline-dot {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  padding: 0.2rem 0.6rem;
+  background: var(--muted);
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.offline-dot::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+}
+.theme-btn {
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--foreground);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.theme-btn:hover { background: var(--muted); }
+.theme-btn svg { width: 14px; height: 14px; }
+.icon-moon { display: none; }
+.dark .icon-sun { display: none; }
+.dark .icon-moon { display: block; }
+
+/* ── Main layout ── */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+  gap: 0;
+  position: relative;
+}
+
+/* ── Stage header ── */
+.stage-header {
+  margin-bottom: 1.5rem;
+}
+.stage-step {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted-foreground);
+  margin-bottom: 0.25rem;
+}
+.stage-title {
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--foreground);
+}
+
+/* ── Upload zone ── */
+#upload-zone {
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  padding: 3.5rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  transition: border-color 0.2s, background 0.2s;
+  box-shadow: var(--shadow-sm);
+}
+#upload-zone:hover, #upload-zone.over {
+  border-color: var(--primary);
+  background: var(--accent);
+}
+.upload-icon {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  display: grid; place-items: center;
+  color: var(--muted-foreground);
+}
+.upload-icon svg { width: 18px; height: 18px; }
+.upload-title {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+.upload-sub {
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
+.upload-sub b { color: var(--foreground); font-weight: 600; }
+.upload-formats {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.2rem;
+}
+.fmt-pill {
+  font-size: 0.64rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+#file-input { display: none; }
+
+/* ── Viewer panel ── */
+#viewer-panel { display: none; }
+
+.viewer-layout {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 1.25rem;
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .viewer-layout { grid-template-columns: 1fr; }
+}
+
+/* ── Image card ── */
+.img-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.img-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--secondary);
+}
+.img-card-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+.img-card-actions {
+  display: flex; gap: 0.35rem;
+}
+.ico-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: grid; place-items: center;
+  width: 26px; height: 26px;
+  border-radius: calc(var(--radius) - 2px);
+  transition: color 0.15s, background 0.15s;
+}
+.ico-btn:hover {
+  color: var(--foreground);
+  background: var(--muted);
+  border-color: var(--border);
+}
+.ico-btn svg { width: 13px; height: 13px; }
+
+.viewer-body {
+  padding: 0.6rem;
+  background: var(--muted);
+  display: flex;
+  justify-content: center;
+  min-height: 140px;
+  position: relative;
+}
+#crop-canvas {
+  display: block;
+  cursor: crosshair;
+  border-radius: 3px;
+  max-width: 100%;
+  height: auto;
+}
+.load-overlay {
+  position: absolute; inset: 0.6rem;
+  display: grid; place-items: center;
+  background: rgba(255,255,255,0.82);
+  z-index: 5;
+  border-radius: 3px;
+}
+.dark .load-overlay {
+  background: rgba(0,0,0,0.6);
+}
+.load-overlay.hidden { display: none; }
+.spin {
+  width: 24px; height: 24px;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: sp 0.65s linear infinite;
+}
+@keyframes sp { to { transform: rotate(360deg); } }
+
+.viewer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.9rem;
+  border-top: 1px solid var(--border);
+  gap: 0.5rem;
+  background: var(--card);
+  min-height: 42px;
+}
+.vfoot-l { display: flex; align-items: center; gap: 0.4rem; }
+.vfoot-r { display: flex; align-items: center; gap: 0.4rem; }
+.viewer-status {
+  font-size: 0.74rem;
+  color: var(--muted-foreground);
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.38rem 0.85rem;
+  font-size: 0.78rem; font-weight: 600;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s, transform 0.1s;
+  line-height: 1.4; white-space: nowrap;
+}
+.btn svg { width: 12px; height: 12px; flex-shrink: 0; }
+.btn-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.btn-primary:hover:not(:disabled) { opacity: 0.87; }
+.btn-primary:active:not(:disabled) { transform: translateY(1px); }
+.btn-primary:disabled { opacity: 0.28; cursor: not-allowed; }
+.btn-ghost {
+  background: transparent;
+  color: var(--foreground);
+  border-color: var(--border);
+}
+.btn-ghost:hover { background: var(--secondary); }
+.btn-sm { padding: 0.28rem 0.65rem; font-size: 0.74rem; }
+
+/* ── Info sidebar ── */
+.info-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* ── State cards (hint / placeholder / error) ── */
+.state-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.state-inner {
+  padding: 1.75rem 1.25rem;
+  display: flex; flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.state-eyebrow {
+  font-size: 0.64rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted-foreground);
+}
+.state-title {
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--foreground);
+  line-height: 1.3;
+}
+.state-body {
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+  line-height: 1.55;
+}
+
+/* ── Results card ── */
+.results-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  display: none;
+}
+.results-card.show { display: block; }
+.rcard-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--secondary);
+}
+.rcard-title {
+  font-size: 0.72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+/* ── Photo ── */
+.photo-strip {
+  display: flex;
+  justify-content: center;
+  padding: 0.9rem;
+  background: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.photo-frame {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  line-height: 0;
+  background: var(--card);
+}
+.photo-frame img {
+  max-height: 140px;
+  width: auto;
+  display: block;
+}
+
+/* ── Data table ── */
+.sec-label {
+  padding: 0.35rem 0.9rem;
+  font-size: 0.63rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--muted-foreground);
+  background: var(--secondary);
+  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+}
+.sec-label:first-child { border-top: none; }
+.rtable { width: 100%; border-collapse: collapse; }
+.rtable tr { border-bottom: 1px solid var(--border); }
+.rtable tr:last-child { border-bottom: none; }
+.rtable td { padding: 0.4rem 0.9rem; font-size: 0.78rem; vertical-align: top; }
+.rtable .rk { color: var(--muted-foreground); font-weight: 500; width: 44%; white-space: nowrap; }
+.rtable .rv { color: var(--foreground); font-weight: 500; word-break: break-word; }
+.rtable .rv.empty { color: var(--muted-foreground); font-style: italic; font-weight: 400; }
+.badge {
+  display: inline-flex; align-items: center; gap: 0.2rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.7rem; font-weight: 600;
+  border-radius: 999px; line-height: 1.4;
+}
+.badge-y { background: rgba(34,197,94,0.15); color: #16a34a; }
+.dark .badge-y { background: rgba(34,197,94,0.12); color: #22c55e; }
+.badge-n { background: var(--muted); color: var(--muted-foreground); }
+
+/* ── JSON panel ── */
+.json-toggle {
+  display: flex; align-items: center; gap: 0.4rem;
+  width: 100%; padding: 0.45rem 0.9rem;
+  border: none; border-top: 1px solid var(--border);
+  background: none; cursor: pointer;
+  font-size: 0.74rem; font-weight: 500;
+  color: var(--muted-foreground);
+  transition: color 0.15s; text-align: left;
+  font-family: var(--font-sans);
+}
+.json-toggle:hover { color: var(--foreground); }
+.chv { width: 11px; height: 11px; transition: transform 0.2s; }
+.json-toggle.open .chv { transform: rotate(90deg); }
+.json-block { display: none; padding: 0.6rem 0.9rem 0.8rem; border-top: 1px solid var(--border); }
+.json-block.open { display: block; }
+.json-pre {
+  font-family: var(--font-mono);
+  font-size: 0.71rem; line-height: 1.55;
+  background: var(--muted); padding: 0.7rem 0.8rem;
+  border-radius: calc(var(--radius) - 2px);
+  overflow-x: auto; white-space: pre-wrap;
+  word-break: break-all; color: var(--foreground);
+  max-height: 240px; overflow-y: auto;
+}
+
+/* ── Error ── */
+.err-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  display: none;
+}
+.err-card.show { display: block; }
+.err-head {
+  padding: 0.45rem 0.9rem;
+  background: var(--secondary);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.7rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--destructive);
+}
+.err-body-inner {
+  padding: 0.9rem;
+}
+.err-box {
+  padding: 0.75rem 1rem;
+  border-radius: calc(var(--radius) - 2px);
+  background: rgba(220,38,38,0.07);
+  border: 1px solid rgba(220,38,38,0.2);
+  color: var(--destructive);
+  font-size: 0.8rem; font-weight: 500; line-height: 1.55;
+}
+.dark .err-box {
+  background: rgba(239,68,68,0.07);
+  border-color: rgba(239,68,68,0.2);
+}
+
+/* ── Hint hints in sidebar ── */
+.hint-feats {
+  display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem;
+}
+.hint-feat {
+  font-size: 0.64rem; font-weight: 500;
+  color: var(--muted-foreground);
+  background: var(--secondary); padding: 0.1rem 0.5rem;
+  border-radius: 999px; border: 1px solid var(--border);
+  letter-spacing: 0.03em;
+}
+
+/* ── Toast ── */
+.toast {
+  position: fixed; bottom: 1.25rem; left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  background: var(--foreground); color: var(--background);
+  padding: 0.38rem 1rem;
+  border-radius: var(--radius);
+  font-size: 0.76rem; font-weight: 600;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 200;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── Footer ── */
+.foot {
+  padding: 0.75rem 1.5rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 0.68rem;
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+  line-height: 1.6;
+}
+
+/* ── Focus ── */
+.btn:focus-visible, .theme-btn:focus-visible, .ico-btn:focus-visible,
+#upload-zone:focus-visible, .json-toggle:focus-visible {
+  outline: 2px solid var(--ring); outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation-duration: 1.5s; }
+  .toast, .chv { transition: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- Bar -->
+<header class="bar">
+  <div class="bar-brand">
+    <span class="bar-title">Sanrakshan</span>
+    <span class="bar-sub">Aadhaar QR Verification</span>
+  </div>
+  <div class="bar-right">
+    <div class="offline-dot">Offline</div>
+    <button class="theme-btn" id="theme-toggle" aria-label="Toggle theme">
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="main">
+
+  <!-- Upload stage -->
+  <div id="upload-stage">
+    <div class="stage-header">
+      <div class="stage-step">Step 1</div>
+      <div class="stage-title">Upload an Aadhaar image</div>
+    </div>
+    <div id="upload-zone" tabindex="0" role="button" aria-label="Upload Aadhaar image">
+      <div class="upload-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      </div>
+      <div class="upload-title">Drop your image here</div>
+      <div class="upload-sub"><b>Click to browse</b> or drag and drop — processed entirely on your machine</div>
+      <div class="upload-formats">
+        <span class="fmt-pill">JPG</span>
+        <span class="fmt-pill">PNG</span>
+        <span class="fmt-pill">BMP</span>
+        <span class="fmt-pill">WebP</span>
+      </div>
+    </div>
+    <input type="file" id="file-input" accept="image/*">
+  </div>
+
+  <!-- Viewer stage -->
+  <div id="viewer-panel">
+    <div class="stage-header">
+      <div class="stage-step" id="viewer-step">Step 2</div>
+      <div class="stage-title" id="viewer-heading">Locating QR code…</div>
+    </div>
+    <div class="viewer-layout">
+      <!-- Image column -->
+      <div class="img-card">
+        <div class="img-card-head">
+          <span class="img-card-label" id="viewer-label">Image</span>
+          <div class="img-card-actions">
+            <button class="ico-btn" id="btn-new" title="Upload a different image">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="viewer-body" id="viewer-body">
+          <canvas id="crop-canvas"></canvas>
+          <div class="load-overlay hidden" id="load-overlay"><div class="spin"></div></div>
+        </div>
+        <div class="viewer-foot">
+          <div class="vfoot-l">
+            <button class="btn btn-ghost btn-sm" id="btn-manual" style="display:none">Manual mode</button>
+            <button class="btn btn-ghost btn-sm" id="btn-clear" style="display:none">Clear</button>
+            <span class="viewer-status" id="viewer-status"></span>
+          </div>
+          <div class="vfoot-r">
+            <button class="btn btn-primary btn-sm" id="btn-decode" style="display:none">
+              Decode
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Info sidebar -->
+      <div class="info-sidebar">
+
+        <!-- Default / placeholder -->
+        <div class="state-card" id="sb-placeholder">
+          <div class="state-inner">
+            <div class="state-eyebrow">Waiting</div>
+            <div class="state-title">Scanning for a QR code</div>
+            <div class="state-body">The QR will be found and decoded automatically. If that fails, draw a rectangle around it in the viewer.</div>
+            <div class="hint-feats">
+              <span class="hint-feat">Secure QR V2</span>
+              <span class="hint-feat">Secure QR V1</span>
+              <span class="hint-feat">Old XML QR</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hint: not found -->
+        <div class="state-card" id="sb-hint" style="display:none">
+          <div class="state-inner">
+            <div class="state-eyebrow">Not detected</div>
+            <div class="state-title">No QR found automatically</div>
+            <div class="state-body">Draw a rectangle around the QR code in the image to the left, then hit <strong>Decode</strong>.</div>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <div class="err-card" id="sb-error">
+          <div class="err-head">Error</div>
+          <div class="err-body-inner"><div class="err-box" id="err-msg"></div></div>
+        </div>
+
+        <!-- Results -->
+        <div class="results-card" id="sb-results">
+          <div class="rcard-head">
+            <span class="rcard-title">Decoded data</span>
+            <button class="ico-btn" id="btn-copy" title="Copy JSON">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </div>
+          <div id="photo-area"></div>
+          <div id="results-body"></div>
+          <button class="json-toggle" id="json-toggle">
+            <svg class="chv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+            Raw JSON
+          </button>
+          <div class="json-block" id="json-block">
+            <pre class="json-pre" id="json-pre"></pre>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer class="foot">All processing happens locally — no data leaves your device.</footer>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ── Theme ── */
+(function(){
+  if(localStorage.getItem('sr-theme')==='dark')
+    document.documentElement.classList.add('dark');
+})();
+document.getElementById('theme-toggle').onclick=()=>{
+  document.documentElement.classList.toggle('dark');
+  localStorage.setItem('sr-theme',document.documentElement.classList.contains('dark')?'dark':'light');
+  if(offscreen) drawCanvas();
+};
+
+/* ── State ── */
+let img=null,offscreen=null,offCtx=null;
+let origW=0,origH=0,dispW=0,dispH=0,scale=1;
+let isDragging=false,hasSel=false;
+let sx=0,sy=0,ex=0,ey=0;
+let autoBbox=null;
+let decoding=false,lastData=null,fullImageB64=null;
+
+const $=s=>document.querySelector(s);
+const uploadStage=$('#upload-stage'),viewerPanel=$('#viewer-panel');
+const uploadZone=$('#upload-zone'),fileInput=$('#file-input');
+const canvas=$('#crop-canvas'),ctx=canvas.getContext('2d');
+const viewerBody=$('#viewer-body'),loadOverlay=$('#load-overlay');
+const vStatus=$('#viewer-status');
+const btnManual=$('#btn-manual'),btnClear=$('#btn-clear');
+const btnDecode=$('#btn-decode');
+const sbPlaceholder=$('#sb-placeholder'),sbHint=$('#sb-hint');
+const sbError=$('#sb-error'),sbResults=$('#sb-results');
+const photoArea=$('#photo-area'),resultsBody=$('#results-body');
+const jsonToggle=$('#json-toggle'),jsonBlock=$('#json-block'),jsonPre=$('#json-pre');
+const toastEl=$('#toast');
+
+/* ── Toast ── */
+let _tt;
+function toast(m){toastEl.textContent=m;toastEl.classList.add('show');clearTimeout(_tt);_tt=setTimeout(()=>toastEl.classList.remove('show'),2200);}
+
+/* ── Sidebar states ── */
+function showSidebar(s){
+  sbPlaceholder.style.display='none';
+  sbHint.style.display='none';
+  sbError.classList.remove('show');
+  sbResults.classList.remove('show');
+  if(s==='placeholder') sbPlaceholder.style.display='block';
+  if(s==='hint') sbHint.style.display='block';
+  if(s==='error') sbError.classList.add('show');
+  if(s==='results') sbResults.classList.add('show');
+}
+
+/* ── Upload ── */
+uploadZone.onclick=()=>fileInput.click();
+uploadZone.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();fileInput.click();}};
+fileInput.onchange=e=>{if(e.target.files[0])loadFile(e.target.files[0]);};
+uploadZone.ondragover=e=>{e.preventDefault();uploadZone.classList.add('over');};
+uploadZone.ondragleave=()=>uploadZone.classList.remove('over');
+uploadZone.ondrop=e=>{
+  e.preventDefault();uploadZone.classList.remove('over');
+  const f=e.dataTransfer.files[0];
+  if(f&&f.type.startsWith('image/'))loadFile(f);
+};
+
+function loadFile(file){
+  const r=new FileReader();
+  r.onload=e=>{
+    fullImageB64=e.target.result;
+    img=new Image();
+    img.onload=()=>{
+      origW=img.naturalWidth;origH=img.naturalHeight;
+      uploadStage.style.display='none';
+      viewerPanel.style.display='block';
+      hasSel=false;autoBbox=null;lastData=null;
+      showSidebar('placeholder');
+      setHeading('Locating QR code…','Step 2');
+      setupViewer();
+      autoDetect();
+    };
+    img.src=e.target.result;
+  };
+  r.readAsDataURL(file);
+}
+
+function setHeading(t,step){
+  $('#viewer-heading').textContent=t;
+  if(step)$('#viewer-step').textContent=step;
+}
+
+/* ── Viewer setup ── */
+function setupViewer(){
+  const maxW=viewerBody.clientWidth-12;
+  const maxH=Math.min(500,innerHeight*.55);
+  scale=Math.min(maxW/origW,maxH/origH,1);
+  dispW=Math.round(origW*scale);dispH=Math.round(origH*scale);
+  canvas.width=dispW;canvas.height=dispH;
+  canvas.style.width=dispW+'px';canvas.style.height=dispH+'px';
+  offscreen=document.createElement('canvas');
+  offscreen.width=dispW;offscreen.height=dispH;
+  offCtx=offscreen.getContext('2d');
+  offCtx.drawImage(img,0,0,dispW,dispH);
+  updateUI();drawCanvas();
+}
+
+/* ── Draw ── */
+function drawCanvas(){
+  ctx.drawImage(offscreen,0,0);
+  const ff=getComputedStyle(document.body).fontFamily;
+  if(autoBbox){
+    const{x,y,w,h}=autoBbox;
+    ctx.save();
+    ctx.fillStyle='rgba(34,197,94,.1)';ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle='rgba(34,197,94,.75)';ctx.lineWidth=2;ctx.setLineDash([]);
+    ctx.strokeRect(x+.5,y+.5,w-1,h-1);
+    ctx.font='600 10px '+ff;
+    const lbl='QR DETECTED',tm=ctx.measureText(lbl);
+    ctx.fillStyle='rgba(34,197,94,.9)';ctx.fillRect(x,y-14,tm.width+10,14);
+    ctx.fillStyle='#fff';ctx.fillText(lbl,x+5,y-3);
+    ctx.restore();
+  }
+  if(hasSel){
+    const x=Math.min(sx,ex),y=Math.min(sy,ey),w=Math.abs(ex-sx),h=Math.abs(ey-sy);
+    ctx.fillStyle='rgba(0,0,0,.45)';ctx.fillRect(0,0,dispW,dispH);
+    ctx.drawImage(offscreen,x,y,w,h,x,y,w,h);
+    ctx.save();
+    ctx.strokeStyle='rgba(255,255,255,.8)';ctx.lineWidth=2;ctx.setLineDash([6,4]);
+    ctx.strokeRect(x+.5,y+.5,w-1,h-1);ctx.restore();
+    const cs=6;ctx.fillStyle='#fff';
+    [[x,y],[x+w,y],[x,y+h],[x+w,y+h]].forEach(([cx,cy])=>{ctx.fillRect(cx-cs/2,cy-cs/2,cs,cs);});
+    const txt=Math.round(w/scale)+' \u00d7 '+Math.round(h/scale)+' px';
+    ctx.save();ctx.font='600 11px '+ff;const mt=ctx.measureText(txt);
+    const lx2=x+w/2-mt.width/2-6,ly2=y>22?y-8:y+h+4;
+    ctx.fillStyle='rgba(0,0,0,.7)';ctx.fillRect(lx2,ly2-11,mt.width+12,16);
+    ctx.fillStyle='#fff';ctx.fillText(txt,lx2+6,ly2+1);ctx.restore();
+  }
+}
+
+/* ── Canvas events ── */
+function gp(e){
+  const r=canvas.getBoundingClientRect(),cx=r.width/canvas.width,cy=r.height/canvas.height;
+  let px,py;
+  if(e.touches&&e.touches.length){px=e.touches[0].clientX;py=e.touches[0].clientY;}
+  else if(e.changedTouches&&e.changedTouches.length){px=e.changedTouches[0].clientX;py=e.changedTouches[0].clientY;}
+  else{px=e.clientX;py=e.clientY;}
+  return{x:Math.max(0,Math.min(dispW,(px-r.left)*cx)),y:Math.max(0,Math.min(dispH,(py-r.top)*cy))};
+}
+canvas.addEventListener('mousedown',onDown);
+canvas.addEventListener('mousemove',onMove);
+canvas.addEventListener('mouseup',onUp);
+canvas.addEventListener('touchstart',onDown,{passive:false});
+canvas.addEventListener('touchmove',onMove,{passive:false});
+canvas.addEventListener('touchend',onUp);
+
+function onDown(e){e.preventDefault();if(autoBbox)return;const p=gp(e);sx=p.x;sy=p.y;ex=p.x;ey=p.y;isDragging=true;hasSel=false;updateUI();}
+function onMove(e){if(!isDragging)return;e.preventDefault();const p=gp(e);ex=p.x;ey=p.y;hasSel=true;drawCanvas();
+  const w=Math.abs(ex-sx),h=Math.abs(ey-sy);
+  vStatus.textContent=w<15||h<15?'Keep dragging\u2026':''+Math.round(w/scale)+' \u00d7 '+Math.round(h/scale)+' px';
+  updateUI();
+}
+function onUp(){if(!isDragging)return;isDragging=false;
+  if(Math.abs(ex-sx)<15||Math.abs(ey-sy)<15){hasSel=false;drawCanvas();vStatus.textContent='Selection too small';}
+  else{vStatus.textContent=Math.round(Math.abs(ex-sx)/scale)+' \u00d7 '+Math.round(Math.abs(ey-sy)/scale)+' px \u2014 ready';}
+  updateUI();
+}
+
+/* ── UI state ── */
+function updateUI(){
+  const selValid=hasSel&&Math.abs(ex-sx)>=15&&Math.abs(ey-sy)>=15;
+  btnManual.style.display=(autoBbox&&!hasSel)?'':'none';
+  btnClear.style.display=hasSel?'':'none';
+  btnDecode.style.display=(selValid&&!decoding)?'':'none';
+  if(decoding){
+    btnDecode.innerHTML='<span class="spin" style="width:12px;height:12px;border-width:2px"></span> Decoding\u2026';
+  }else{
+    btnDecode.innerHTML='Decode <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
+  }
+  if(!autoBbox&&!hasSel&&!decoding){
+    vStatus.textContent='Draw a box around the QR code';
+    $('#viewer-label').textContent='Image';
+  }
+}
+
+/* ── Buttons ── */
+btnManual.onclick=()=>{autoBbox=null;showSidebar('hint');vStatus.textContent='Draw a box around the QR code';$('#viewer-label').textContent='Image';setHeading('Select the QR code manually','Step 2');drawCanvas();updateUI();};
+btnClear.onclick=()=>{hasSel=false;drawCanvas();vStatus.textContent='Draw a box around the QR code';updateUI();};
+ $('#btn-new').onclick=()=>{img=null;offscreen=null;hasSel=false;autoBbox=null;lastData=null;fullImageB64=null;viewerPanel.style.display='none';uploadStage.style.display='';fileInput.value='';updateUI();};
+btnDecode.onclick=doManualDecode;
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&hasSel){hasSel=false;drawCanvas();vStatus.textContent='Draw a box around the QR code';updateUI();}});
+
+/* ── Auto-detect ── */
+async function autoDetect(){
+  loadOverlay.classList.remove('hidden');
+  vStatus.textContent='Scanning\u2026';
+  try{
+    const resp=await fetch('/detect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:fullImageB64,autodetect:true})});
+    const res=await resp.json();
+    loadOverlay.classList.add('hidden');
+    if(res.found&&res.success){
+      autoBbox={x:res.bbox.x*dispW,y:res.bbox.y*dispH,w:res.bbox.w*dispW,h:res.bbox.h*dispH};
+      lastData=res.data;
+      renderResults(res.data,res.photo);
+      showSidebar('results');
+      setHeading('QR decoded successfully','Step 2 \u2014 Done');
+      vStatus.textContent='QR detected and decoded';
+      $('#viewer-label').textContent='Image \u2014 Auto-detected';
+    }else if(res.found&&!res.success){
+      showSidebar('error');
+      $('#err-msg').textContent=res.error||'QR detected but could not be decoded.';
+      setHeading('Decode failed \u2014 try manually','Step 2');
+      vStatus.textContent='Decode failed';
+      $('#viewer-label').textContent='Image';
+    }else{
+      showSidebar('hint');
+      setHeading('Select the QR code manually','Step 2');
+      vStatus.textContent='No QR found \u2014 draw a box';
+      $('#viewer-label').textContent='Image';
+    }
+  }catch(err){
+    loadOverlay.classList.add('hidden');
+    showSidebar('error');
+    $('#err-msg').textContent='Could not reach the server. Is the Flask app running?';
+    vStatus.textContent='Server error';
+  }
+  drawCanvas();updateUI();
+}
+
+/* ── Manual decode ── */
+async function doManualDecode(){
+  if(!hasSel||decoding)return;
+  decoding=true;updateUI();
+  vStatus.textContent='Decoding\u2026';
+  try{
+    const b64=getCropped();
+    const resp=await fetch('/detect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:b64,autodetect:false})});
+    const res=await resp.json();
+    if(res.success){
+      lastData=res.data;
+      renderResults(res.data,res.photo);
+      showSidebar('results');
+      setHeading('QR decoded successfully','Step 2 \u2014 Done');
+      vStatus.textContent='Decoded';
+    }else{
+      showSidebar('error');
+      $('#err-msg').textContent=res.error||'Decode failed.';
+      vStatus.textContent='Decode failed';
+    }
+  }catch(err){
+    showSidebar('error');
+    $('#err-msg').textContent='Could not reach the server. Is the Flask app running?';
+    vStatus.textContent='Server error';
+  }
+  decoding=false;updateUI();
+}
+
+function getCropped(){
+  const x=Math.min(sx,ex),y=Math.min(sy,ey),w=Math.abs(ex-sx),h=Math.abs(ey-sy);
+  const ox=Math.round(x/scale),oy=Math.round(y/scale),ow=Math.round(w/scale),oh=Math.round(h/scale);
+  const c=document.createElement('canvas');c.width=Math.max(1,ow);c.height=Math.max(1,oh);
+  c.getContext('2d').drawImage(img,ox,oy,ow,oh,0,0,c.width,c.height);
+  return c.toDataURL('image/png');
+}
+
+/* ── Render results ── */
+const LABELS={name:'Name',dob:'Date of Birth',gender:'Gender',aadhaar_last_4_digit:'Aadhaar (Last 4)',
+  last_4_digits_mobile_no:'Mobile (Last 4)',careof:'Care Of',co:'Care Of',house:'House No.',
+  street:'Street',location:'Location',loc:'Location',landmark:'Landmark',lm:'Landmark',
+  postoffice:'Post Office',po:'Post Office',district:'District',dist:'District',
+  subdistrict:'Sub-District',subdist:'Sub-District',vtc:'Village / Town',state:'State',
+  pincode:'PIN Code',pc:'PIN Code',referenceid:'Reference ID',version:'QR Version',uid:'UID'};
+const PERS=['name','dob','gender','uid','aadhaar_last_4_digit','last_4_digits_mobile_no'];
+const ADDR=['careof','co','house','street','location','loc','landmark','lm','postoffice','po',
+  'district','dist','subdistrict','subdist','vtc','state','pincode','pc'];
+const TECH=['referenceid','version'];
+const SKIP=new Set(['aadhaar_last_digit','email_mobile_status','email','mobile']);
+
+function renderResults(data,photo){
+  if(photo){
+    let src=photo;
+    if(!src.startsWith('data:')){
+      if(src.startsWith('/9j/'))src='data:image/jpeg;base64,'+src;
+      else if(src.startsWith('iVBOR'))src='data:image/png;base64,'+src;
+      else src='data:image/jpeg;base64,'+src;
+    }
+    photoArea.innerHTML='<div class="photo-strip"><div class="photo-frame"><img src="'+src+'" alt="Extracted photo"></div></div>';
+  }else{photoArea.innerHTML='';}
+
+  let h='';
+  const pr=rows(data,PERS);
+  if(pr){h+='<div class="sec-label">Personal</div>'+pr;}
+  h+='<table class="rtable"><tr><td class="rk">Email registered</td><td class="rv">';
+  h+=data.email===true?'<span class="badge badge-y">Yes</span>':'<span class="badge badge-n">No</span>';
+  h+='</td></tr><tr><td class="rk">Mobile registered</td><td class="rv">';
+  h+=data.mobile===true?'<span class="badge badge-y">Yes</span>':'<span class="badge badge-n">No</span>';
+  h+='</td></tr></table>';
+  const ar=rows(data,ADDR);
+  if(ar){h+='<div class="sec-label">Address</div>'+ar;}
+  const tr2=rows(data,TECH);
+  if(tr2){h+='<div class="sec-label">Technical</div>'+tr2;}
+  const allKnown=new Set([...PERS,...ADDR,...TECH,...SKIP]);
+  const extras=Object.keys(data).filter(k=>!allKnown.has(k));
+  if(extras.length){h+='<div class="sec-label">Other</div>'+rows(data,extras);}
+  resultsBody.innerHTML=h;
+  jsonPre.textContent=JSON.stringify(data,null,2);
+  jsonBlock.classList.remove('open');jsonToggle.classList.remove('open');
+}
+
+function rows(data,keys){
+  const p=keys.filter(k=>data.hasOwnProperty(k));
+  if(!p.length)return'';
+  let h='<table class="rtable">';
+  p.forEach(k=>{
+    const v=data[k],l=LABELS[k]||k;
+    const d=(v===''||v===null||v===undefined)?'<span class="empty">Not available</span>':esc(String(v));
+    h+='<tr><td class="rk">'+esc(l)+'</td><td class="rv">'+d+'</td></tr>';
+  });
+  return h+'</table>';
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+
+/* ── JSON toggle & copy ── */
+jsonToggle.onclick=()=>{jsonToggle.classList.toggle('open');jsonBlock.classList.toggle('open');};
+ $('#btn-copy').onclick=()=>{
+  if(!lastData)return;
+  const t=JSON.stringify(lastData,null,2);
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(()=>toast('Copied')).catch(()=>fallbackCopy(t));
+  }else{fallbackCopy(t);}
+};
+function fallbackCopy(t){
+  const ta=document.createElement('textarea');ta.value=t;ta.style.cssText='position:fixed;opacity:0';
+  document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+  toast('Copied');
+}
+
+/* ── Resize ── */
+let _rt;
+window.addEventListener('resize',()=>{
+  clearTimeout(_rt);
+  _rt=setTimeout(()=>{
+    if(img&&viewerPanel.style.display==='block'){
+      const old=autoBbox?{x:autoBbox.x/dispW,y:autoBbox.y/dispH,w:autoBbox.w/dispW,h:autoBbox.h/dispH}:null;
+      hasSel=false;setupViewer();
+      if(old)autoBbox={x:old.x*dispW,y:old.y*dispH,w:old.w*dispW,h:old.h*dispH};
+      drawCanvas();updateUI();
+    }
+  },250);
+});
+</script>
+</body>
+</html>

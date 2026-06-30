@@ -94,37 +94,6 @@
 
 ---
 
-## 🚶 Workflow (Single Document Mode)
-
-```
-STEP 1: Upload
-  → Drag-and-drop or click-to-browse
-  → Accepts JPG, PNG, WEBP, BMP, PDF
-
-STEP 2: Classify
-  → Keyword + regex matching on OCR text
-  → Auto-identifies: Aadhaar / PAN / Passport / Bank Stmt / ITR / Land Record
-
-STEP 3: Deep Forensic Analysis
-  → Document-specific validations (see below)
-  → 3 Universal engines run in parallel (ELA, Metadata, Clone/Font/Noise)
-
-STEP 4: Risk Score
-  → Weighted signal aggregation → 0–100 score
-  → Levels: 🟢 LOW (0–20) | 🟡 MEDIUM (21–45) | 🟠 HIGH (46–70) | 🔴 CRITICAL (71–100)
-
-STEP 5: Results Dashboard
-  → Circular risk gauge
-  → Signal breakdown (Pass ✅ / Fail ❌ / Warning ⚠️)
-  → ELA heatmap toggle (Original ↔ Tamper Map)
-  → Extracted fields (Name, UID, DOB, etc.)
-
-STEP 6: AI Underwriter Report
-  → LLM-generated executive summary
-  → Recommended action: APPROVE / MANUAL REVIEW / REJECT
-```
-
-
 ## Features
 
 | Module | What it does |

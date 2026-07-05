@@ -90,6 +90,47 @@ function compareCustomer(fields, customer) {
   return mismatches;
 }
 
+function normalizePersonName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\b(mr|mrs|ms|miss|shri|sri|smt|dr|prof|name|applicant|customer|holder)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function compareApplicantName(text, customer) {
+  const expectedName = normalizePersonName(customer?.full_name);
+  if (!expectedName) return null;
+
+  const normalizedText = normalizePersonName(text);
+  if (!normalizedText) {
+    return {
+      matched: false,
+      reason: 'OCR text was empty, so the applicant name could not be verified.',
+      evidence: { expected: customer.full_name },
+    };
+  }
+
+  if (normalizedText.includes(expectedName)) {
+    return { matched: true, evidence: { expected: customer.full_name, match: customer.full_name } };
+  }
+
+  const expectedTokens = expectedName.split(' ').filter((token) => token.length > 1);
+  const matchedTokens = expectedTokens.filter((token) => normalizedText.includes(token));
+  const matchRatio = expectedTokens.length ? matchedTokens.length / expectedTokens.length : 0;
+
+  return {
+    matched: matchRatio >= 0.75 && matchedTokens.length >= 2,
+    reason: 'OCR text does not contain the selected applicant name.',
+    evidence: {
+      expected: customer.full_name,
+      matchedTokens,
+      matchRatio: Number(matchRatio.toFixed(2)),
+    },
+  };
+}
+
 function scoreFindings(findings) {
   const penalty = findings.reduce((sum, finding) => {
     if (finding.severity === 'critical') return sum + 35;
@@ -367,6 +408,17 @@ export function verifyDocument({ document, customer, ocr, metadata }) {
   const customerMismatches = compareCustomer(fields, customer);
   for (const mismatch of customerMismatches) {
     addFinding(findings, 'high', 'kyc.customer_mismatch', `Extracted ${mismatch.field} does not match the selected customer.`, mismatch);
+  }
+
+  const nameCheck = compareApplicantName(text, customer);
+  if (nameCheck && !nameCheck.matched) {
+    addFinding(
+      findings,
+      text ? 'high' : 'medium',
+      'kyc.customer_name_mismatch',
+      nameCheck.reason,
+      nameCheck.evidence,
+    );
   }
 
   const amounts = amountStats(fields.amounts);

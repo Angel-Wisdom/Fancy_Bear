@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ChevronRight } from 'lucide-react';
+import { Plus, Search, ChevronRight } from 'lucide-react';
 import { api } from '../utils/api';
 
 export default function Applications() {
   const [customers, setCustomers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [newApplicantName, setNewApplicantName] = useState('');
+  const [creatingApplicant, setCreatingApplicant] = useState(false);
+  const [createError, setCreateError] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -24,6 +27,31 @@ export default function Applications() {
     c.pan_number?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  async function handleCreateApplicant(event) {
+    event.preventDefault();
+    const fullName = newApplicantName.trim();
+    if (!fullName) {
+      setCreateError('Enter the applicant name to create a new application.');
+      return;
+    }
+
+    setCreatingApplicant(true);
+    setCreateError('');
+    try {
+      const response = await api.post('/api/customers', { fullName });
+      const customer = response.customer;
+      if (customer) {
+        setCustomers((current) => [customer, ...current]);
+        setNewApplicantName('');
+        navigate(`/applications/${customer.id}`);
+      }
+    } catch (error) {
+      setCreateError(error.message || 'Unable to create applicant right now.');
+    } finally {
+      setCreatingApplicant(false);
+    }
+  }
+
   return (
     <div className="flex-col gap-6 w-full">
       <div className="flex justify-between items-end mb-4">
@@ -31,18 +59,40 @@ export default function Applications() {
           <h2 className="text-2xl font-bold mb-1">Applications</h2>
           <p className="text-secondary text-sm">Select an applicant to open their underwriting workspace.</p>
         </div>
-        
-        <div className="search-box" style={{ maxWidth: '320px', backgroundColor: 'var(--surface-raised)' }}>
-          <Search size={16} className="text-tertiary" />
-          <input
-            type="text"
-            placeholder="Search by name or PAN..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="w-full"
-            style={{ backgroundColor: 'transparent', border: 'none', outline: 'none' }}
-          />
+      </div>
+
+      <div className="panel flex-col gap-4">
+        <div className="flex items-end justify-between gap-4 flex-wrap">
+          <form className="flex items-end gap-3 flex-wrap" onSubmit={handleCreateApplicant}>
+            <label className="flex-col gap-2 min-w-[260px]">
+              Add new applicant
+              <input
+                type="text"
+                value={newApplicantName}
+                onChange={(event) => setNewApplicantName(event.target.value)}
+                placeholder="Enter applicant name"
+              />
+            </label>
+            <button className="btn-primary" type="submit" disabled={creatingApplicant}>
+              <Plus size={16} />
+              {creatingApplicant ? 'Creating...' : 'Create applicant'}
+            </button>
+          </form>
+
+          <div className="search-box" style={{ maxWidth: '320px', backgroundColor: 'var(--surface-raised)' }}>
+            <Search size={16} className="text-tertiary" />
+            <input
+              type="text"
+              placeholder="Search by name or PAN..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full"
+              style={{ backgroundColor: 'transparent', border: 'none', outline: 'none' }}
+            />
+          </div>
         </div>
+
+        {createError ? <div className="inline-error">{createError}</div> : null}
       </div>
 
       <div className="panel p-0 overflow-hidden w-full">

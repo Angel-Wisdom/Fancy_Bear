@@ -50,7 +50,7 @@ async function extractPdfText(buffer) {
 async function extractImageText(buffer) {
   // PADDLE OCR DISABLED FOR 8GB RAM STABILITY
   // const paddle = await extractImageTextWithPaddle(buffer).catch((error) => ({
-  //   error: error.message,
+  //    error: error.message,
   //   engine: 'paddleocr+opencv',
   // }));
   // if (paddle.text) return paddle;

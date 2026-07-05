@@ -42,7 +42,7 @@ services:
       - AADHAAR_SERVICE_HOST=aadhaar
       - AADHAAR_SERVICE_PORT=5000
       - PORT=3001
-      - AUTH_DISABLED=true
+      - AUTH_DISABLED=true 
       - SURAKSHA_DB_PATH=/app/data/suraksha.db
     volumes:
       # Persist the JSON data store across restarts

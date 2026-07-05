@@ -1,7 +1,9 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { getDb } from '../db/database.js';
 import { verifyToken } from '../middleware/auth.js';
 import { verifyLandRecord } from '../engines/land-record-engine.js';
+import { writeAuditEntry } from '../utils/audit.js';
 
 const router = Router();
 
@@ -17,6 +19,79 @@ router.get('/', (req, res) => {
   `).all();
 
   res.json({ customers });
+});
+
+router.post('/', (req, res) => {
+  const db = getDb();
+  const fullName = String(req.body?.fullName || req.body?.name || '').trim();
+
+  if (!fullName) {
+    return res.status(400).json({ message: 'Applicant name is required.' });
+  }
+
+  const createdAt = new Date().toISOString();
+  const id = randomUUID();
+  const customer = {
+    id,
+    full_name: fullName,
+    date_of_birth: String(req.body?.dateOfBirth || ''),
+    gender: req.body?.gender || null,
+    pan_number: req.body?.panNumber || null,
+    aadhaar_last4: null,
+    aadhaar_hash: null,
+    phone: req.body?.phone || null,
+    email: req.body?.email || null,
+    address_line1: req.body?.addressLine1 || null,
+    address_line2: req.body?.addressLine2 || null,
+    city: req.body?.city || null,
+    state: req.body?.state || null,
+    pincode: req.body?.pincode || null,
+    occupation: req.body?.occupation || null,
+    annual_income: req.body?.annualIncome ?? null,
+    risk_score: Number(req.body?.riskScore) || 0,
+    created_at: createdAt,
+    updated_at: createdAt,
+  };
+
+  db.prepare(`
+    INSERT INTO customers (
+      id, full_name, date_of_birth, gender, pan_number, aadhaar_last4, aadhaar_hash,
+      phone, email, address_line1, address_line2, city, state, pincode, occupation,
+      annual_income, risk_score, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    customer.id,
+    customer.full_name,
+    customer.date_of_birth,
+    customer.gender,
+    customer.pan_number,
+    customer.aadhaar_last4,
+    customer.aadhaar_hash,
+    customer.phone,
+    customer.email,
+    customer.address_line1,
+    customer.address_line2,
+    customer.city,
+    customer.state,
+    customer.pincode,
+    customer.occupation,
+    customer.annual_income,
+    customer.risk_score,
+    customer.created_at,
+    customer.updated_at,
+  );
+
+  writeAuditEntry({
+    userId: req.user?.id || null,
+    action: 'customer.create',
+    resourceType: 'customer',
+    resourceId: id,
+    details: { fullName },
+    ipAddress: req.ip,
+    userAgent: req.get('user-agent'),
+  });
+
+  res.status(201).json({ customer });
 });
 
 router.get('/:id', (req, res) => {

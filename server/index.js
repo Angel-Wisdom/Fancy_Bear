@@ -8,6 +8,8 @@ import verifyRoutes from './routes/verify.js';
 import dashboardRoutes from './routes/dashboard.js';
 import reportsRoutes from './routes/reports.js';
 import aadhaarRoutes from './routes/aadhaar.js';
+import auditRoutes from './routes/audit.js';
+import reviewRoutes from './routes/review.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -29,6 +31,8 @@ app.use('/api/verify', verifyRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/aadhaar', aadhaarRoutes);
+app.use('/api', auditRoutes);
+app.use('/api/review', reviewRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: 'Route not found', path: req.path });

@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../utils/api';
 import DocumentsTab from '../components/DocumentsTab';
+import FinancialTab from '../components/FinancialTab';
+import LandTab from '../components/LandTab';
+
 
 export default function ApplicationWorkspace() {
   const { id } = useParams();
@@ -37,6 +40,8 @@ export default function ApplicationWorkspace() {
 
       <div className="w-full mt-2">
         {activeTab === 'documents' && <DocumentsTab customerId={id} />}
+        {activeTab === 'financial' && <FinancialTab customerId={id} />}
+        {activeTab === 'land' && <LandTab customerId={id} />}
         
         {/* Placeholder Shells for Phase 5 continued work */}
         {activeTab === 'findings' && (
@@ -44,12 +49,6 @@ export default function ApplicationWorkspace() {
             <h3 className="font-bold text-primary">Cross-Document Correlation</h3>
             <p className="text-secondary">Awaiting Day 3 correlation engine integration.</p>
           </div>
-        )}
-        {activeTab === 'financial' && (
-           <div className="panel p-8 text-center text-secondary">Financial Analysis Workspace pending migration.</div>
-        )}
-        {activeTab === 'land' && (
-           <div className="panel p-8 text-center text-secondary">Land Record Workspace pending migration.</div>
         )}
       </div>
     </div>

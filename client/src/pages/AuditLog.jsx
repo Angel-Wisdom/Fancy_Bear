@@ -2,37 +2,43 @@ import { useEffect, useState } from 'react';
 import { api } from '../utils/api';
 
 export default function AuditLog() {
-  const [rows, setRows] = useState([]);
+  const [logs, setLogs] = useState([]);
 
   useEffect(() => {
-    api.get('/api/dashboard/audit-log').then((data) => setRows(data.auditLog || [])).catch(() => null);
+    // Make sure this matches the route you added above
+    api.get('/api/audit-logs') 
+      .then(res => {
+        console.log("Audit Logs Response:", res); // Debug check
+        setLogs(res.logs || []);
+      })
+      .catch(console.error);
   }, []);
 
   return (
-    <div className="page-stack">
-      <section className="panel">
-        <div className="panel-title">Immutable Audit Trail</div>
-        <table className="compact-table full-table">
+    <div className="flex-col gap-4 w-full">
+      <h2 className="text-2xl font-bold">System Audit Log</h2>
+      <div className="panel p-0 overflow-hidden">
+        <table className="compact-table w-full">
           <thead>
             <tr>
-              <th>Action</th>
-              <th>Resource</th>
-              <th>User</th>
               <th>Timestamp</th>
+              <th>Action</th>
+              <th>Resource ID</th>
+              <th>Details</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td>{row.action}</td>
-                <td>{row.resource_type || 'system'}</td>
-                <td>{row.user_id || 'system'}</td>
-                <td>{row.created_at}</td>
+            {logs.map(log => (
+              <tr key={log.id}>
+                <td className="text-xs text-secondary">{log.created_at}</td>
+                <td><code className="text-xs">{log.action}</code></td>
+                <td className="text-xs font-mono">{log.resource_id}</td>
+                <td className="text-xs text-secondary truncate max-w-xs">{log.details}</td>
               </tr>
             ))}
           </tbody>
         </table>
-      </section>
+      </div>
     </div>
   );
 }

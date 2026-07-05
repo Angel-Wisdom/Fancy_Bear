@@ -1,12 +1,5 @@
 import { createWorker } from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function isPdf(fileName, mimeType) {
   return /pdf/i.test(mimeType || '') || /\.pdf$/i.test(fileName || '');
@@ -48,13 +41,6 @@ async function extractPdfText(buffer) {
 }
 
 async function extractImageText(buffer) {
-  // PADDLE OCR DISABLED FOR 8GB RAM STABILITY
-  // const paddle = await extractImageTextWithPaddle(buffer).catch((error) => ({
-  //    error: error.message,
-  //   engine: 'paddleocr+opencv',
-  // }));
-  // if (paddle.text) return paddle;
-  // console.error("🚨 PaddleOCR failed offline with error:", paddle.error);
   const worker = await createWorker('eng');
   try {
     const result = await worker.recognize(buffer);
@@ -69,76 +55,6 @@ async function extractImageText(buffer) {
     throw err; 
   } finally {
     await worker.terminate();
-  }
-}
-
-function runPaddleScript(imagePath) {
-  const scriptPath = join(__dirname, 'paddle_ocr.py');
-  const python = process.env.PYTHON || 'python';
-
-  console.log(`\n[DEBUG] Starting PaddleOCR execution...`);
-  console.log(`[DEBUG] Command: ${python} ${scriptPath} ${imagePath} --lang ${process.env.PADDLE_OCR_LANG || 'en'}`);
-
-  return new Promise((resolve, reject) => {
-    execFile(
-      python,
-      [scriptPath, imagePath, '--lang', process.env.PADDLE_OCR_LANG || 'en'],
-      {
-        timeout: Number(process.env.PADDLE_OCR_TIMEOUT_MS || 120000),
-        windowsHide: true,
-        env: {
-          ...process.env,
-          PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: 'True',
-        },
-      },
-      (error, stdout, stderr) => {
-        console.log("\n=== PADDLE_OCR STDOUT ===");
-        console.log(stdout || "<empty>");
-        console.log("=========================");
-        
-        console.log("\n=== PADDLE_OCR STDERR ===");
-        console.log(stderr || "<empty>");
-        console.log("=========================");
-
-        if (error) {
-          console.log("\n=== NODEJS ERROR OBJECT ===");
-          console.log(error);
-          console.log("===========================\n");
-          reject(new Error((stderr || error.message).trim()));
-          return;
-        }
-
-        try {
-          const jsonMatch = stdout.match(/\{[\s\S]*\}/);
-          if (!jsonMatch) {
-            throw new Error("No JSON object found in output string.");
-          }
-          resolve(JSON.parse(jsonMatch[0]));
-        } catch (parseErr) {
-          reject(new Error('PaddleOCR returned unreadable output'));
-        }
-      },
-    );
-  });
-}
-
-async function extractImageTextWithPaddle(buffer) {
-  const dir = await mkdtemp(join(tmpdir(), 'suraksha-ocr-'));
-  const imagePath = join(dir, 'document-image');
-
-  try {
-    await writeFile(imagePath, buffer);
-    const result = await runPaddleScript(imagePath);
-    if (result.error) throw new Error(result.error);
-    return {
-      text: String(result.text || '').trim(),
-      confidence: Math.max(0, Math.min(100, Number(result.confidence) || 0)),
-      engine: result.engine || 'paddleocr+opencv',
-      pages: result.pages || 1,
-      lines: result.lines || [],
-    };
-  } finally {
-    await rm(dir, { recursive: true, force: true });
   }
 }
 

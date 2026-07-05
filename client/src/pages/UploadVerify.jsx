@@ -55,6 +55,7 @@ export default function UploadVerify() {
               <option value="aadhaar_card">Aadhaar Card</option>
               <option value="bank_statement">Bank Statement</option>
               <option value="salary_slip">Salary Slip</option>
+              <option value="itr">ITR</option>
               <option value="land_title">Land Title</option>
               <option value="other">Other</option>
             </select>

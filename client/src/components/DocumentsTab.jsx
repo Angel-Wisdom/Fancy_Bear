@@ -41,7 +41,10 @@ export default function DocumentsTab({ customerId }) {
     if (customerId) loadDocuments();
   }, [customerId]);
 
-  const selectedDocument = useMemo(() => documents.find((doc) => doc.id === selectedDocumentId) || null, [documents, selectedDocumentId]);
+  const selectedDocument = useMemo(() => {
+    const doc = documents.find((doc) => doc.id === selectedDocumentId) || null;
+    return doc;
+  }, [documents, selectedDocumentId]);
   const activeFileObject = useMemo(() => files.length > 0 ? files[0] : selectedDocument || null, [files, selectedDocument]);
   const details = useMemo(() => parseJson(selectedDocument?.verification?.details_json, null), [selectedDocument]);
   const metadata = parseJson(selectedDocument?.metadata_json, { Status: selectedDocument ? 'Metadata unavailable' : 'No document selected' });

@@ -62,9 +62,11 @@ async function extractImageText(buffer) {
       text: (result.data.text || '').trim(),
       confidence: Math.max(0, Math.min(100, Number(result.data.confidence) || 0)),
       engine: 'tesseract.js',
-      fallbackFrom: paddle.error ? { engine: paddle.engine, error: paddle.error } : null,
       pages: 1,
     };
+  } catch (err) {
+    console.error("TESSERACT CRITICAL ERROR:", err);
+    throw err; 
   } finally {
     await worker.terminate();
   }

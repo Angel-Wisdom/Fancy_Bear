@@ -7,6 +7,16 @@ export function signToken(payload, expiresIn = '2h') {
 }
 
 export function verifyToken(req, res, next) {
+
+  if (process.env.AUTH_DISABLED === 'true') {
+    req.user = { 
+      id: 'demo-user', 
+      role: 'verifier', 
+      name: 'Demo Officer' 
+    };
+    return next();
+  }
+  
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) {
     return res.status(401).json({ message: 'Missing bearer token' });

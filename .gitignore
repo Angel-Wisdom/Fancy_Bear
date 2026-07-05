@@ -173,3 +173,5 @@ docker-compose.override.yml
 coverage/
 *.pid
 *.seed
+
+files/

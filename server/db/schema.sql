@@ -1,6 +1,31 @@
 -- ============================================================
--- Suraksha 2.0 — Full Database Schema
--- Real-time Document Anomaly Detection System
+-- Suraksha 2.0 — Full Database Schema  (v2 — Step 1 migration)
+--
+-- This is a MINIMAL diff against the original schema.sql — every table/column
+-- that wasn't specifically called out below is untouched, on purpose, so nothing
+-- that currently works (Benford/salami detection, land records, alerts, etc.)
+-- breaks. Changes made, and why:
+--
+--   1. documents.doc_type — CHECK constraint REMOVED. The canonical list of
+--      ~35 document types now lives in server/engines/doc-types.js (single
+--      source of truth, validated at the app layer). See REBUILD_GUIDE.md Bug B.4.
+--   2. customers.aadhaar_number (plaintext, UNIQUE) — REPLACED with
+--      aadhaar_last4 + aadhaar_hash. Per RBI's KYC Master Direction masking
+--      requirement and UIDAI's Aadhaar Data Vault guidance, a regulated
+--      entity should not hold the full Aadhaar number in a plain app database.
+--      The full number should only exist transiently in memory during a
+--      verification request. See kyc-engine.js's new hashAadhaar().
+--   3. verification_results.verification_type and alerts.alert_type — CHECK
+--      constraints EXTENDED (not replaced) with new values needed later for
+--      the cross-document correlation engine (Section H) and the tiering
+--      system (Section F). Added now because SQLite can't ALTER a CHECK
+--      constraint without a full table rebuild — cheap to add today, painful
+--      to add later.
+--   4. financial_records — added one nullable, additive column
+--      (running_balance) for the bank-statement continuity check (G.4).
+--      Nothing existing changes shape.
+--   5. verification_results — added one nullable, additive column (tier)
+--      for the Section F classification badge. Nothing existing changes shape.
 -- ============================================================
 
 -- ── Users & Authentication ──────────────────────────────────
@@ -24,7 +49,8 @@ CREATE TABLE IF NOT EXISTS customers (
     date_of_birth   TEXT NOT NULL,
     gender          TEXT CHECK (gender IN ('M', 'F', 'O')),
     pan_number      TEXT UNIQUE,
-    aadhaar_number  TEXT UNIQUE,
+    aadhaar_last4   TEXT,               -- CHANGED: was aadhaar_number (full, plaintext)
+    aadhaar_hash    TEXT UNIQUE,        -- NEW: sha256(full number + salt) — see kyc-engine.js hashAadhaar()
     phone           TEXT,
     email           TEXT,
     address_line1   TEXT,
@@ -44,21 +70,16 @@ CREATE TABLE IF NOT EXISTS documents (
     id              TEXT PRIMARY KEY,
     customer_id     TEXT NOT NULL,
     uploaded_by     TEXT NOT NULL,
-    doc_type        TEXT NOT NULL CHECK (doc_type IN (
-                        'pan_card', 'aadhaar_card', 'passport',
-                        'bank_statement', 'salary_slip', 'itr',
-                        'land_title', 'encumbrance_cert', 'sale_deed',
-                        'property_tax', 'photograph', 'other'
-                    )),
+    doc_type        TEXT NOT NULL,      -- CHANGED: CHECK constraint removed, see doc-types.js
     original_name   TEXT NOT NULL,
     stored_path     TEXT NOT NULL,
     mime_type       TEXT,
     file_size       INTEGER,
-    file_hash       TEXT,                -- SHA-256 hash of the file
-    fingerprint     TEXT,                -- Document fingerprint for dedup
-    ocr_text        TEXT,                -- Extracted OCR text
-    ocr_confidence  REAL,                -- Average OCR confidence (0-100)
-    metadata_json   TEXT,                -- EXIF / PDF metadata as JSON
+    file_hash       TEXT,
+    fingerprint     TEXT,
+    ocr_text        TEXT,
+    ocr_confidence  REAL,
+    metadata_json   TEXT,
     status          TEXT NOT NULL DEFAULT 'uploaded' CHECK (status IN (
                         'uploaded', 'processing', 'verified', 'flagged', 'rejected'
                     )),
@@ -83,6 +104,7 @@ CREATE TABLE IF NOT EXISTS financial_records (
     description     TEXT,
     transaction_date TEXT NOT NULL,
     reference_number TEXT,
+    running_balance REAL,               -- NEW, nullable: for G.4 balance-continuity check
     is_flagged      INTEGER NOT NULL DEFAULT 0,
     flag_reason     TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
@@ -99,7 +121,7 @@ CREATE TABLE IF NOT EXISTS land_records (
     taluk           TEXT NOT NULL,
     district        TEXT NOT NULL,
     state           TEXT NOT NULL DEFAULT 'Karnataka',
-    total_area      REAL NOT NULL,          -- in sq. metres
+    total_area      REAL NOT NULL,
     area_unit       TEXT NOT NULL DEFAULT 'sqm',
     registered_owner TEXT NOT NULL,
     previous_owner  TEXT,
@@ -110,7 +132,7 @@ CREATE TABLE IF NOT EXISTS land_records (
     has_encumbrance INTEGER NOT NULL DEFAULT 0,
     encumbrance_details TEXT,
     mutation_status TEXT CHECK (mutation_status IN ('completed', 'pending', 'disputed', 'not_applicable')),
-    ownership_chain_json TEXT,            -- JSON array of historical owners
+    ownership_chain_json TEXT,
     is_flagged      INTEGER NOT NULL DEFAULT 0,
     flag_reason     TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
@@ -124,16 +146,18 @@ CREATE TABLE IF NOT EXISTS verification_results (
     document_id     TEXT,
     customer_id     TEXT NOT NULL,
     verification_type TEXT NOT NULL CHECK (verification_type IN (
-                        'kyc', 'financial', 'land_record', 'forensic', 'full'
+                        'kyc', 'financial', 'land_record', 'forensic', 'full',
+                        'cross_document'   -- NEW, for Section H (not used until that step is built)
                     )),
     status          TEXT NOT NULL CHECK (status IN (
                         'pass', 'fail', 'warning', 'pending', 'error'
                     )),
-    overall_score   REAL,                  -- 0–100, higher = more trustworthy
-    details_json    TEXT NOT NULL,          -- Full structured result
+    tier            TEXT,               -- NEW, nullable: tier1_checksum | tier2_format_only | tier3_no_validator
+    overall_score   REAL,
+    details_json    TEXT NOT NULL,
     engine_version  TEXT DEFAULT '2.0.0',
     run_by          TEXT NOT NULL,
-    run_duration_ms INTEGER,               -- How long the check took
+    run_duration_ms INTEGER,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (document_id)  REFERENCES documents(id),
     FOREIGN KEY (customer_id)  REFERENCES customers(id),
@@ -150,7 +174,8 @@ CREATE TABLE IF NOT EXISTS alerts (
                         'benford_violation', 'salami_attack', 'duplicate_document',
                         'metadata_tampering', 'kyc_mismatch', 'land_dispute',
                         'statistical_outlier', 'ela_anomaly', 'ownership_mismatch',
-                        'forged_document', 'system'
+                        'forged_document', 'system',
+                        'cross_document_mismatch', 'checksum_failure', 'unverifiable_locally'  -- NEW
                     )),
     severity        TEXT NOT NULL CHECK (severity IN ('low', 'medium', 'high', 'critical')),
     title           TEXT NOT NULL,

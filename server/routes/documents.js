@@ -9,6 +9,8 @@ import { inspectMetadata } from '../engines/forensics-engine.js';
 import { verifyDocument } from '../engines/document-verification-engine.js';
 import { signReport } from '../engines/crypto-engine.js';
 import { writeAuditEntry } from '../utils/audit.js';
+import path from 'node:path';
+import fs from 'node:fs';
 
 const upload = multer({ storage: multer.memoryStorage() });
 const router = Router();
@@ -17,6 +19,7 @@ router.use(verifyToken);
 
 router.get('/', (req, res) => {
   const db = getDb();
+  
   const docs = db.prepare(`
     SELECT d.*, c.full_name AS customer_name
     FROM documents d
@@ -24,23 +27,81 @@ router.get('/', (req, res) => {
     ORDER BY d.created_at DESC
     LIMIT 100
   `).all();
+
+  // Prepare the verification query once for performance
+  const getVerification = db.prepare(`
+    SELECT * FROM verification_results 
+    WHERE document_id = ? 
+    ORDER BY created_at DESC 
+    LIMIT 1
+  `);
+
   const documents = docs.map((document) => ({
     ...document,
-    verification: (db.__store?.verification_results || [])
-      .filter((row) => row.document_id === document.id)
-      .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0] || null,
+    verification: getVerification.get(document.id) || null,
   }));
+  
   res.json({ documents });
 });
 
 router.get('/:id', (req, res) => {
   const db = getDb();
   const document = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
+  
   if (!document) return res.status(404).json({ message: 'Document not found' });
-  const verification = (db.__store?.verification_results || [])
-    .filter((row) => row.document_id === document.id)
-    .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0] || null;
+  
+  const verification = db.prepare(`
+    SELECT * FROM verification_results 
+    WHERE document_id = ? 
+    ORDER BY created_at DESC 
+    LIMIT 1
+  `).get(document.id) || null;
+  
   res.json({ document: { ...document, verification } });
+});
+
+router.get('/:id/file', verifyToken, (req, res) => {
+  const db = getDb();
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
+
+  if (!doc) {
+    return res.status(404).json({ message: 'Document target record missing' });
+  }
+
+  // Check if the document layout tracks an explicit file path on the disk volume
+  const actualPath = doc.stored_path || doc.file_path || doc.path;
+
+  // Handle Base64 Data URI from database
+  if (actualPath && actualPath.startsWith('data:')) {
+    const matches = actualPath.match(/^data:([^;]+);base64,(.+)$/);
+    if (matches) {
+      const mimeType = matches[1];
+      const base64Buffer = Buffer.from(matches[2], 'base64');
+      res.setHeader('Content-Type', mimeType);
+      return res.send(base64Buffer);
+    }
+  }
+
+  if (!actualPath || actualPath.startsWith('memory://')) {
+    res.setHeader('Content-Type', 'image/svg+xml');
+    return res.send(`
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="100%" height="100%">
+        <rect width="100%" height="100%" fill="#1e293b"/>
+        <text x="50%" y="50%" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#94a3b8">
+          Legacy Memory Mock Asset: ${doc.original_name}
+        </text>
+      </svg>
+    `);
+  }
+  
+  const filePath = path.resolve(actualPath);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ message: 'Binary asset missing from storage disk' });
+  }
+
+  // Send the binary data natively with the proper Content-Type header so browser engines can render it
+  return res.sendFile(filePath);
 });
 
 function serializeMetadata(metadata = {}) {
@@ -104,8 +165,27 @@ function storeVerification({ document, result, userId, runDurationMs }) {
 
 router.post('/upload', upload.array('files'), async (req, res) => {
   const files = req.files || [];
-  const { customerId, docType = 'other' } = req.body || {};
+  
+  const rawCustomerId = req.body?.customerId || req.body?.customer_id;
+  const docType = req.body?.docType || req.body?.doc_type || 'other';
+
+  if (!rawCustomerId) {
+    return res.status(400).json({ message: 'Missing required parameter: customerId' });
+  }
+
   const db = getDb();
+
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(rawCustomerId);
+  if (!customer) {
+    console.error(`Upload aborted: Customer ID "${rawCustomerId}" does not exist in DB.`);
+    return res.status(400).json({ 
+      message: `Cannot link document. Customer ID "${rawCustomerId}" was not found in the system database.` 
+    });
+  }
+  
+  const customerIdToUse = customer.id;
+  const currentUserId = req.user?.id || 'demo-user';
+
   const uploaded = [];
 
   for (const file of files) {
@@ -115,21 +195,24 @@ router.post('/upload', upload.array('files'), async (req, res) => {
     const extracted = await extractTextFromBuffer(file.buffer, file.originalname, file.mimetype);
     const metadata = inspectMetadata(file.buffer);
     const id = randomUUID();
-    const customerIdToUse = customerId || db.prepare('SELECT id FROM customers LIMIT 1').get()?.id;
-    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerIdToUse);
+
+    const base64Data = file.buffer.toString('base64');
+    const dataUri = `data:${file.mimetype};base64,${base64Data}`;
+
     const document = {
       id,
       customer_id: customerIdToUse,
-      uploaded_by: req.user.id,
+      uploaded_by: currentUserId,
       doc_type: docType,
       original_name: file.originalname,
-      stored_path: `memory://${id}`,
+      stored_path: dataUri,
       mime_type: file.mimetype,
       file_size: file.size,
       file_hash: hash,
       fingerprint: hash,
       created_at: createdAt,
     };
+    
     const verification = verifyDocument({ document, customer, ocr: extracted, metadata });
     const status = verification.status === 'pass' ? 'verified' : verification.status === 'warning' ? 'flagged' : 'rejected';
 
@@ -139,10 +222,10 @@ router.post('/upload', upload.array('files'), async (req, res) => {
     `).run(
       id,
       customerIdToUse,
-      req.user.id,
+      currentUserId,
       docType,
       file.originalname,
-      `memory://${id}`,
+      dataUri,
       file.mimetype,
       file.size,
       hash,
@@ -157,7 +240,7 @@ router.post('/upload', upload.array('files'), async (req, res) => {
     const verificationId = storeVerification({
       document,
       result: verification,
-      userId: req.user.id,
+      userId: currentUserId,
       runDurationMs: Date.now() - startedAt,
     });
 
@@ -171,7 +254,14 @@ router.post('/upload', upload.array('files'), async (req, res) => {
       score: verification.score,
       findings: verification.findings,
     });
-    writeAuditEntry({ userId: req.user.id, action: 'document.upload.verify', resourceType: 'document', resourceId: id, details: { fileName: file.originalname, hash, status, score: verification.score } });
+    
+    writeAuditEntry({ 
+      userId: currentUserId, 
+      action: 'document.upload.verify', 
+      resourceType: 'document', 
+      resourceId: id, 
+      details: { fileName: file.originalname, hash, status, score: verification.score } 
+    });
   }
 
   res.json({ documents: uploaded });

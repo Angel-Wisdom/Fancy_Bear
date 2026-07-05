@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getDb } from '../db/database.js';
 import { verifyToken } from '../middleware/auth.js';
+import { verifyLandRecord } from '../engines/land-record-engine.js';
 
 const router = Router();
 
@@ -41,11 +42,39 @@ router.get('/:id/financial-records', (req, res) => {
 
 router.get('/:id/land-record', (req, res) => {
   const db = getDb();
+  
+  // Grab the raw record from the SQLite database
   const record = db.prepare('SELECT * FROM land_records WHERE customer_id = ? LIMIT 1').get(req.params.id);
+  
   if (!record) {
     return res.status(404).json({ message: 'Land record not found' });
   }
-  res.json({ record });
+
+  // FETCH THE CUSTOMER PROFILE DATA (Fixes the missing signature object)
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+
+  try {
+    // Feed the record into the engine to compute issues, status, and scores dynamically
+    const verificationOutput = verifyLandRecord(record, customer);
+
+    // Merge the engine telemetry directly into the response payload
+    const completeRecord = {
+      ...record,
+      status: verificationOutput.status, // e.g., 'flagged', 'verified'
+      score: verificationOutput.score,   // Risk rating
+      issues: verificationOutput.issues   // The critical array your frontend loops over!
+    };
+
+    return res.json({ record: completeRecord });
+  } catch (error) {
+    console.error('Land engine processing failure:', error);
+    return res.json({ 
+      record: { 
+        ...record, 
+        issues: [{ severity: 'medium', type: 'system', message: 'Engine analysis unavailable' }] 
+      } 
+    });
+  }
 });
 
 export default router;

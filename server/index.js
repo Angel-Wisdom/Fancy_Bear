@@ -39,8 +39,8 @@ app.use((error, req, res, next) => {
   res.status(error.status || 500).json({ message: error.message || 'Internal server error' });
 });
 
-const server = app.listen(port, '127.0.0.1', () => {
-  console.log(`[server] Listening on http://127.0.0.1:${port}`);
+const server = app.listen(port, '0.0.0.0', () => {
+  console.log(`[server] Listening on http://0.0.0.0:${port}`);
 });
 
 for (const signal of ['SIGINT', 'SIGTERM']) {

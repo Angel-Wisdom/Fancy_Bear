@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { getDb, closeDb } from './database.js';
+import { hashAadhaar } from '../engines/kyc-engine.js';
 
 // ── Verhoeff Algorithm (for valid Aadhaar checksums) ────────
 
@@ -115,13 +116,17 @@ function generateCustomers(count) {
         const fullName = `${firstName} ${lastName}`;
         const [city, state] = pick(CITIES);
 
+        const generatedAadhaar = generateAadhaar();
         customers.push({
             id: randomUUID(),
             full_name: fullName,
             date_of_birth: randomDate(1960, 2000),
             gender,
             pan_number: generatePAN(lastName),
-            aadhaar_number: generateAadhaar(),
+            // CHANGED: was aadhaar_number (full, plaintext). Masked storage now —
+            // see schema.sql v2 header and REBUILD_GUIDE.md for why.
+            aadhaar_last4: generatedAadhaar.slice(-4),
+            aadhaar_hash: hashAadhaar(generatedAadhaar),
             phone: `+91${randInt(70000, 99999)}${randInt(10000, 99999)}`,
             email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}${randInt(1,99)}@email.com`,
             address_line1: `${randInt(1,500)}, ${pick(STREETS)}`,
@@ -369,7 +374,7 @@ async function seed() {
     const salt = bcrypt.genSaltSync(10);
     const users = [
         {
-            id: randomUUID(), username: 'junior1',
+            id: 'demo-user', username: 'junior1',
             password_hash: bcrypt.hashSync('suraksha@123', salt),
             full_name: 'Priya Sharma', role: 'verifier',
             email: 'priya.sharma@bank.com'
@@ -387,10 +392,10 @@ async function seed() {
     const customers = generateCustomers(55);
     const insertCustomer = db.prepare(`
         INSERT INTO customers (id, full_name, date_of_birth, gender, pan_number,
-            aadhaar_number, phone, email, address_line1, address_line2,
+            aadhaar_last4, aadhaar_hash, phone, email, address_line1, address_line2,
             city, state, pincode, occupation, annual_income, risk_score)
         VALUES (@id, @full_name, @date_of_birth, @gender, @pan_number,
-            @aadhaar_number, @phone, @email, @address_line1, @address_line2,
+            @aadhaar_last4, @aadhaar_hash, @phone, @email, @address_line1, @address_line2,
             @city, @state, @pincode, @occupation, @annual_income, @risk_score)
     `);
 

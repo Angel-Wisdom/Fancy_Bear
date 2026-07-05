@@ -1,4 +1,7 @@
+import { sha256 } from './crypto-engine.js';
+
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const AADHAAR_HASH_SALT = process.env.AADHAAR_HASH_SALT || 'suraksha-aadhaar-salt-dev-only';
 
 const VERHOEFF_D = [
   [0,1,2,3,4,5,6,7,8,9],[1,2,3,4,0,6,7,8,9,5],
@@ -34,10 +37,25 @@ export function validateAadhaar(aadhaar) {
   return verhoeffChecksum(value.slice(0, 11)) === Number(value[11]);
 }
 
+// NEW: replaces plaintext storage/comparison of the full Aadhaar number.
+// Use this to derive what gets stored (customers.aadhaar_hash) and to compare
+// an OCR'd/QR-decoded number against a stored hash without ever holding the
+// full number anywhere except transiently in memory during the request.
+export function hashAadhaar(aadhaar) {
+  const value = String(aadhaar || '').replace(/\s+/g, '');
+  if (!/^\d{12}$/.test(value)) return null;
+  return sha256(value + AADHAAR_HASH_SALT);
+}
+
 export function verifyKycFields({ name, pan, aadhaar, dob, address }, customer) {
   const mismatches = [];
   if (pan && !validatePan(pan)) mismatches.push('Invalid PAN format');
   if (aadhaar && !validateAadhaar(aadhaar)) mismatches.push('Invalid Aadhaar checksum');
+  // CHANGED: customer.aadhaar_number no longer exists (masked storage — see schema.sql v2).
+  // Compare hashes instead of plaintext numbers.
+  if (aadhaar && customer?.aadhaar_hash && validateAadhaar(aadhaar) && hashAadhaar(aadhaar) !== customer.aadhaar_hash) {
+    mismatches.push('Aadhaar does not match customer record');
+  }
   if (customer?.full_name && name && customer.full_name.toLowerCase() !== String(name).toLowerCase()) mismatches.push('Name mismatch');
   if (customer?.date_of_birth && dob && customer.date_of_birth !== dob) mismatches.push('Date of birth mismatch');
   if (customer?.address_line1 && address && !String(address).toLowerCase().includes(customer.address_line1.split(',')[0].toLowerCase())) mismatches.push('Address mismatch');

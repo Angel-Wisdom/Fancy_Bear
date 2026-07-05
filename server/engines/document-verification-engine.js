@@ -1,5 +1,5 @@
 import { detectTamperSignals } from './forensics-engine.js';
-import { validateAadhaar, validatePan } from './kyc-engine.js';
+import { validateAadhaar, validatePan, hashAadhaar } from './kyc-engine.js';
 
 const DOC_REQUIREMENTS = {
   pan_card: {
@@ -83,8 +83,9 @@ function compareCustomer(fields, customer) {
   if (fields.pan && customer?.pan_number && fields.pan !== String(customer.pan_number).toUpperCase()) {
     mismatches.push({ field: 'pan', expected: customer.pan_number, actual: fields.pan });
   }
-  if (fields.aadhaar && customer?.aadhaar_number && fields.aadhaar !== String(customer.aadhaar_number).replace(/\s+/g, '')) {
-    mismatches.push({ field: 'aadhaar', expected: customer.aadhaar_number, actual: fields.aadhaar });
+  // CHANGED: customer.aadhaar_number no longer exists (masked storage — see schema.sql v2 / REBUILD_GUIDE.md).
+  if (fields.aadhaar && customer?.aadhaar_hash && validateAadhaar(fields.aadhaar) && hashAadhaar(fields.aadhaar) !== customer.aadhaar_hash) {
+    mismatches.push({ field: 'aadhaar', expected: `hash:${customer.aadhaar_hash.slice(0, 8)}…`, actual: fields.aadhaar });
   }
   return mismatches;
 }

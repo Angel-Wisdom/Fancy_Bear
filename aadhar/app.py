@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify
 import cv2
 import base64
 import io
@@ -53,7 +53,7 @@ def _prepare_image(image_b64):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return {"status": "healthy", "service": "aadhaar-verification-engine"}, 200
 
 
 @app.route("/detect", methods=["POST"])

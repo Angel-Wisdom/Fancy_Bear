@@ -25,12 +25,30 @@ function isTokenExpired(token) {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(() => localStorage.getItem('suraksha_token'));
+
+  const isBypassEnabled = import.meta.env.VITE_AUTH_DISABLED === 'true';
+
+  const [user, setUser] = useState(() => {
+    if (isBypassEnabled) {
+      return { id: 'demo-user', role: 'verifier', name: 'Demo Officer', username: 'demo' };
+    }
+    return null;
+  });
+
+  const [token, setToken] = useState(() => {
+    if (isBypassEnabled) return 'bypass-mock-token';
+    return localStorage.getItem('suraksha_token');
+  });
+
   const [loading, setLoading] = useState(true);
 
   // Restore session from stored token
   useEffect(() => {
+    if (isBypassEnabled) {
+      setLoading(false);
+      return;
+    }
+
     if (token && !isTokenExpired(token)) {
       const payload = parseJwt(token);
       setUser({
@@ -40,16 +58,15 @@ export function AuthProvider({ children }) {
         name: payload.name || payload.username,
       });
     } else if (token) {
-      // Token expired — clean up
       localStorage.removeItem('suraksha_token');
       setToken(null);
     }
     setLoading(false);
-  }, []);
+  }, [isBypassEnabled, token]);
 
   // Auto-logout timer
   useEffect(() => {
-    if (!token) return;
+    if (isBypassEnabled || !token) return;
     const payload = parseJwt(token);
     if (!payload?.exp) return;
 
@@ -64,7 +81,7 @@ export function AuthProvider({ children }) {
     }, msUntilExpiry);
 
     return () => clearTimeout(timer);
-  }, [token]);
+  }, [token, isBypassEnabled]);
 
   const login = useCallback(async (username, password) => {
     const res = await api.post('/api/auth/login', { username, password });
@@ -83,24 +100,22 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
+    if (isBypassEnabled) {
+      window.location.href = '/';
+      return;
+    }
     localStorage.removeItem('suraksha_token');
     setToken(null);
     setUser(null);
   }, []);
 
-  const hasRole = useCallback((requiredRole) => {
-    if (!user) return false;
-    return user.role === 'verifier' || requiredRole === 'verifier';
-  }, [user]);
-
   const value = {
     user,
     token,
     loading,
-    isAuthenticated: !!user && !!token,
+    isAuthenticated: isBypassEnabled ? true : (!!user && !!token),
     login,
     logout,
-    hasRole,
   };
 
   return (

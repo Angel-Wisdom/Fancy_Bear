@@ -42,9 +42,13 @@ services:
       - AADHAAR_SERVICE_HOST=aadhaar
       - AADHAAR_SERVICE_PORT=5000
       - PORT=3001
+      - AUTH_DISABLED=true
+      - SURAKSHA_DB_PATH=/app/data/suraksha.db
     volumes:
       # Persist the JSON data store across restarts
-      - ./server/suraksha.store.json:/app/suraksha.store.json
+      - ./server/data:/app/data
+      - ./server:/app
+      - /app/node_modules
     depends_on:
       aadhaar:
         condition: service_healthy
@@ -61,6 +65,7 @@ services:
     environment:
       # Vite proxy points to the Node server by Docker service name
       - VITE_API_TARGET=http://server:3001
+      - VITE_AUTH_DISABLED=true
     volumes:
       # Mount source for hot-reload — changes reflect instantly
       - ./client/src:/app/src

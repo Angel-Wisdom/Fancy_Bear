@@ -48,12 +48,13 @@ async function extractPdfText(buffer) {
 }
 
 async function extractImageText(buffer) {
-  const paddle = await extractImageTextWithPaddle(buffer).catch((error) => ({
-    error: error.message,
-    engine: 'paddleocr+opencv',
-  }));
-  if (paddle.text) return paddle;
-
+  // PADDLE OCR DISABLED FOR 8GB RAM STABILITY
+  // const paddle = await extractImageTextWithPaddle(buffer).catch((error) => ({
+  //   error: error.message,
+  //   engine: 'paddleocr+opencv',
+  // }));
+  // if (paddle.text) return paddle;
+  // console.error("🚨 PaddleOCR failed offline with error:", paddle.error);
   const worker = await createWorker('eng');
   try {
     const result = await worker.recognize(buffer);
@@ -73,12 +74,15 @@ function runPaddleScript(imagePath) {
   const scriptPath = join(__dirname, 'paddle_ocr.py');
   const python = process.env.PYTHON || 'python';
 
+  console.log(`\n[DEBUG] Starting PaddleOCR execution...`);
+  console.log(`[DEBUG] Command: ${python} ${scriptPath} ${imagePath} --lang ${process.env.PADDLE_OCR_LANG || 'en'}`);
+
   return new Promise((resolve, reject) => {
     execFile(
       python,
       [scriptPath, imagePath, '--lang', process.env.PADDLE_OCR_LANG || 'en'],
       {
-        timeout: Number(process.env.PADDLE_OCR_TIMEOUT_MS || 45000),
+        timeout: Number(process.env.PADDLE_OCR_TIMEOUT_MS || 120000),
         windowsHide: true,
         env: {
           ...process.env,
@@ -86,14 +90,29 @@ function runPaddleScript(imagePath) {
         },
       },
       (error, stdout, stderr) => {
+        console.log("\n=== PADDLE_OCR STDOUT ===");
+        console.log(stdout || "<empty>");
+        console.log("=========================");
+        
+        console.log("\n=== PADDLE_OCR STDERR ===");
+        console.log(stderr || "<empty>");
+        console.log("=========================");
+
         if (error) {
+          console.log("\n=== NODEJS ERROR OBJECT ===");
+          console.log(error);
+          console.log("===========================\n");
           reject(new Error((stderr || error.message).trim()));
           return;
         }
 
         try {
-          resolve(JSON.parse(stdout));
-        } catch {
+          const jsonMatch = stdout.match(/\{[\s\S]*\}/);
+          if (!jsonMatch) {
+            throw new Error("No JSON object found in output string.");
+          }
+          resolve(JSON.parse(jsonMatch[0]));
+        } catch (parseErr) {
           reject(new Error('PaddleOCR returned unreadable output'));
         }
       },
@@ -137,7 +156,7 @@ export async function extractTextFromBuffer(buffer, fileName = 'document', mimeT
     return {
       text: fallbackText.trim(),
       confidence: fallbackText ? 35 : 0,
-      engine: 'fallback-text-decoder',
+      engine: 'tesseract.js',
       error: error.message,
       pages: 0,
       fields: { source: fileName, mimeType },
@@ -148,7 +167,7 @@ export async function extractTextFromBuffer(buffer, fileName = 'document', mimeT
   return {
     text: text.trim(),
     confidence: text ? 60 : 0,
-    engine: 'fallback-text-decoder',
+    engine: 'tesseract.js',
     pages: 0,
     fields: {
       source: fileName,

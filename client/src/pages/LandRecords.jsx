@@ -17,10 +17,13 @@ export default function LandRecords() {
 
   useEffect(() => {
     if (!customerId) return;
-    api.get(`/api/customers/${customerId}/land-record`).then((data) => setRecord(data.record || null)).catch(() => setRecord(null));
+    api.get(`/api/customers/${customerId}/land-record`)
+      .then((data) => setRecord(data.record || null))
+      .catch(() => setRecord(null));
   }, [customerId]);
 
   const ownershipChain = Array.isArray(record?.ownership_chain_json) ? record.ownership_chain_json : [];
+  const issues = Array.isArray(record?.issues) ? record.issues : [];
 
   return (
     <div className="page-stack">
@@ -51,8 +54,21 @@ export default function LandRecords() {
           <div className="panel-title">Discrepancy Highlights</div>
           {record ? (
             <div className="stack-list">
-              <div className="feed-item"><AlertBadge severity={record.has_encumbrance ? 'high' : 'low'}>{record.has_encumbrance ? 'encumbrance' : 'clear'}</AlertBadge><p>Encumbrance status rendered from the seeded record.</p></div>
-              <div className="feed-item"><AlertBadge severity="medium">survey</AlertBadge><p>Survey number and area validations render here.</p></div>
+              {issues.length > 0 ? (
+                issues.map((issue, index) => (
+                  <div className="feed-item" key={index}>
+                    <AlertBadge severity={issue.severity || 'medium'}>
+                      {issue.type || 'discrepancy'}
+                    </AlertBadge>
+                    <p>{issue.message || issue}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="feed-item">
+                  <AlertBadge severity="low">clear</AlertBadge>
+                  <p>No validation or survey discrepancies detected for this record.</p>
+                </div>
+              )}
             </div>
           ) : <p className="muted">Highlights appear after a record is loaded.</p>}
         </div>

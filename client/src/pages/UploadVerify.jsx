@@ -1,111 +1,100 @@
-import { useEffect, useMemo, useState } from 'react';
-import { CloudUpload, Fingerprint, FileCheck2, ShieldAlert } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { FileSearch, Eye, ShieldAlert, CheckCircle } from 'lucide-react';
 import { api } from '../utils/api';
-import DocumentPreview from '../components/DocumentPreview';
 
 export default function UploadVerify() {
-  const [customers, setCustomers] = useState([]);
-  const [form, setForm] = useState({ customerId: '', docType: 'pan_card' });
-  const [files, setFiles] = useState([]);
-  const [uploads, setUploads] = useState([]);
-  const [progress, setProgress] = useState(0);
-  const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/api/customers').then((data) => setCustomers(data.customers || [])).catch(() => null);
+    api.get('/api/documents')
+      .then((data) => {
+        setDocuments(data.documents || []);
+      })
+      .catch(() => null)
+      .finally(() => setLoading(false));
   }, []);
-
-  const activePreview = useMemo(() => files[0] || null, [files]);
-
-  async function handleUpload(event) {
-    event.preventDefault();
-    if (!files.length) return;
-    const formData = new FormData();
-    formData.append('customerId', form.customerId);
-    formData.append('docType', form.docType);
-    files.forEach((file) => formData.append('files', file));
-
-    setBusy(true);
-    setProgress(0);
-    try {
-      const result = await api.upload('/api/documents/upload', formData, setProgress);
-      setUploads(result.documents || []);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <div className="page-stack">
-      <section className="panel">
-        <div className="panel-title">Upload & Verify</div>
-        <form className="upload-layout" onSubmit={handleUpload}>
-          <label>
-            Customer
-            <select value={form.customerId} onChange={(e) => setForm((current) => ({ ...current, customerId: e.target.value }))}>
-              <option value="">Select customer</option>
-              {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.full_name}</option>)}
-            </select>
-          </label>
-
-          <label>
-            Document Type
-            <select value={form.docType} onChange={(e) => setForm((current) => ({ ...current, docType: e.target.value }))}>
-              <option value="pan_card">PAN Card</option>
-              <option value="aadhaar_card">Aadhaar Card</option>
-              <option value="bank_statement">Bank Statement</option>
-              <option value="salary_slip">Salary Slip</option>
-              <option value="itr">ITR</option>
-              <option value="land_title">Land Title</option>
-              <option value="other">Other</option>
-            </select>
-          </label>
-
-          <label className="dropzone">
-            <CloudUpload size={26} />
-            <strong>Drag files here or choose them</strong>
-            <input type="file" multiple accept="image/*,.pdf" onChange={(e) => setFiles(Array.from(e.target.files || []))} />
-          </label>
-
-          <div className="upload-meter">
-            <div className="upload-meter-bar" style={{ width: `${progress}%` }} />
-          </div>
-
-          <button className="primary-button" type="submit" disabled={busy || !files.length}>
-            {busy ? 'Processing...' : 'Upload and verify'}
-          </button>
-        </form>
+      <section className="hero-panel text-center-balance">
+        <div>
+          <p className="eyebrow">Document Pipeline Entrypoint</p>
+          <h1>Verification Queue Registry</h1>
+          <p>
+            The underlying optical extraction engine handles multi-format classification and ingestion profiles natively inside the secure workbench.
+          </p>
+        </div>
+        <button 
+          className="primary-button hero-cta-btn" 
+          type="button" 
+          onClick={() => navigate('/results')}
+        >
+          <FileSearch size={18} />
+          Launch Verification Workbench
+        </button>
       </section>
 
-      <section className="two-column-grid">
-        <div className="panel">
-          <div className="panel-title">File Preview</div>
-          <DocumentPreview file={activePreview} hash={uploads[0]?.hash} />
-        </div>
-        <div className="panel">
-          <div className="panel-title">Verification Findings</div>
-          <div className="stack-list">
-            {uploads.length ? uploads.map((item) => (
-              <div key={item.id} className="hash-row">
-                {item.findings?.length ? <ShieldAlert size={16} /> : <FileCheck2 size={16} />}
-                <div>
-                  <strong>{item.originalName} · {item.status} · {Math.round(item.score)}%</strong>
-                  <p><Fingerprint size={14} /> {item.hash}</p>
-                  {item.findings?.length ? (
-                    <ul className="finding-list">
-                      {item.findings.slice(0, 4).map((finding) => (
-                        <li key={`${finding.code}-${finding.message}`}>
-                          <span className={`badge badge-${finding.severity === 'high' || finding.severity === 'critical' ? 'danger' : 'warning'}`}>{finding.severity}</span>
-                          {finding.message}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : <p>Verified with no high-confidence anomaly findings.</p>}
-                </div>
-              </div>
-            )) : <p className="muted">Uploaded document verification results will appear here.</p>}
+      <section className="panel">
+        <div className="panel-title">Recent Ingestion Queue Audit</div>
+        {loading ? (
+          <p className="muted">Synchronizing system logs...</p>
+        ) : documents.length > 0 ? (
+          <div className="table-responsive-wrapper">
+            <table className="compact-table alternate-rows">
+              <thead>
+                <tr>
+                  <th>Document Handle</th>
+                  <th>Customer Profile</th>
+                  <th>Ingestion Class</th>
+                  <th>System Status</th>
+                  <th>Anomalies</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {documents.slice(0, 10).map((doc) => {
+                  const status = doc.verification?.status || doc.status || 'pending';
+                  const hasFindings = status === 'flagged' || status === 'rejected';
+
+                  return (
+                    <tr key={doc.id}>
+                      <td><strong>{doc.original_name}</strong></td>
+                      <td>{doc.customer_name || 'System Link'}</td>
+                      <td><code className="text-lowercase">{doc.doc_type}</code></td>
+                      <td>
+                        <span className={`status-pill pill-${status}`}>
+                          {status}
+                        </span>
+                      </td>
+                      <td>
+                        {hasFindings ? (
+                          <span className="text-danger-flex"><ShieldAlert size={14} /> Flagged</span>
+                        ) : (
+                          <span className="text-success-flex"><CheckCircle size={14} /> Clear</span>
+                        )}
+                      </td>
+                      <td>
+                        <button
+                          className="icon-button text-accent"
+                          type="button"
+                          title="Open in workbench"
+                          onClick={() => navigate(`/results/${doc.id}`)}
+                        >
+                          <Eye size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        </div>
+        ) : (
+          <p className="muted">No historical document records detected in the persistent data layer.</p>
+        )}
       </section>
     </div>
   );

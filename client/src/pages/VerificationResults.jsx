@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { CloudUpload, FileSearch, RefreshCw, ShieldAlert } from 'lucide-react';
 import RiskGauge from '../components/RiskGauge';
 import MetadataPanel from '../components/MetadataPanel';
+import DocumentPreview from '../components/DocumentPreview'; // <-- Import the component
 import { api } from '../utils/api';
 
 const tabs = ['ocr', 'findings', 'fields', 'metadata', 'report'];
@@ -54,6 +55,12 @@ export default function VerificationResults() {
     [documents, selectedId],
   );
 
+  // Derive the active raw file staged for upload, or fallback to mock data properties if viewing an existing doc
+  const activeFileObject = useMemo(() => {
+    if (files.length > 0) return files[0];
+    return selectedDocument || documents.find(d => d.id === selectedId || d.id === documentId) || null;
+  }, [files, selectedDocument, documents, selectedId, documentId]);
+
   const details = useMemo(() => (
     parseJson(selectedDocument?.verification?.details_json, null)
   ), [selectedDocument]);
@@ -83,10 +90,18 @@ export default function VerificationResults() {
     setProgress(0);
     try {
       const result = await api.upload('/api/documents/upload', formData, setProgress);
-      const firstUploaded = result.documents?.[0];
-      await loadDocuments(firstUploaded?.id);
-      if (firstUploaded?.id) navigate(`/results/${firstUploaded.id}`);
+      const firstUploaded = result.documents?.[0] || result.document;
+      const updatedList = await loadDocuments(firstUploaded?.id);
+      if (firstUploaded?.id) {
+        setSelectedId(firstUploaded.id);
+        navigate(`/results/${firstUploaded.id}`);
+      } else if (updatedList.length > 0) {
+        setSelectedId(updatedList[0].id);
+        navigate(`/results/${updatedList[0].id}`);
+      }
       setFiles([]);
+    } catch (error) {
+      console.error("Upload routing failure:", error);
     } finally {
       setBusy(false);
     }
@@ -137,33 +152,41 @@ export default function VerificationResults() {
       </section>
 
       <section className="results-workbench">
-        <div className="panel">
-          <div className="panel-title document-list-title">
-            Uploaded Documents
-            <button className="icon-button" type="button" onClick={() => loadDocuments()} title="Refresh documents">
-              <RefreshCw size={16} />
-            </button>
+        <div className="workbench-sidebar-stack">
+          <div className="panel">
+            <div className="panel-title document-list-title">
+              Uploaded Documents
+              <button className="icon-button" type="button" onClick={() => loadDocuments()} title="Refresh documents">
+                <RefreshCw size={16} />
+              </button>
+            </div>
+            <div className="document-list">
+              {documents.length ? documents.map((document) => {
+                const status = document.verification?.status || document.status;
+                const documentDetails = parseJson(document.verification?.details_json, {});
+                return (
+                  <button
+                    key={document.id}
+                    type="button"
+                    className={`document-list-item ${document.id === selectedId ? 'active' : ''}`}
+                    onClick={() => selectDocument(document.id)}
+                  >
+                    <FileSearch size={17} />
+                    <span>
+                      <strong>{document.original_name}</strong>
+                      <small>{document.customer_name || 'Customer'} | {document.doc_type} | {status}</small>
+                    </span>
+                    {documentDetails.findings?.length ? <ShieldAlert size={16} /> : null}
+                  </button>
+                );
+              }) : <p className="muted">No uploaded documents yet. Upload one above to start verification.</p>}
+            </div>
           </div>
-          <div className="document-list">
-            {documents.length ? documents.map((document) => {
-              const status = document.verification?.status || document.status;
-              const documentDetails = parseJson(document.verification?.details_json, {});
-              return (
-                <button
-                  key={document.id}
-                  type="button"
-                  className={`document-list-item ${document.id === selectedId ? 'active' : ''}`}
-                  onClick={() => selectDocument(document.id)}
-                >
-                  <FileSearch size={17} />
-                  <span>
-                    <strong>{document.original_name}</strong>
-                    <small>{document.customer_name || 'Customer'} | {document.doc_type} | {status}</small>
-                  </span>
-                  {documentDetails.findings?.length ? <ShieldAlert size={16} /> : null}
-                </button>
-              );
-            }) : <p className="muted">No uploaded documents yet. Upload one above to start verification.</p>}
+
+          {/* RENDER PREVIEW: Displays currently selected file preview or historical database records */}
+          <div className="panel integrated-preview-panel">
+            <div className="panel-title">Active Document Content View</div>
+            <DocumentPreview file={activeFileObject} hash={selectedDocument?.hash} />
           </div>
         </div>
 

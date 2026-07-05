@@ -76,7 +76,7 @@
 | Service | Tech | Port | Role |
 |---------|------|------|------|
 | `client` | React 18 + Vite | 5173 | UI — all screens, canvas QR scanner |
-| `server` | Node.js 22 + Express | 3001 | REST API, verification engines, JWT auth |
+| `server` | Node.js 22 + Express + SQLite (Native) | 3001 | REST API, verification engines, JWT auth, PaddleOCR engine |
 | `aadhaar` | Python 3.11 + Flask | 5000 | Aadhaar QR decode microservice |
 
 ---
@@ -134,12 +134,18 @@ cd SuRaksha2.0_FancyBear
 docker compose up --build
 ```
 
-Wait for all three services to be ready (first build takes ~3–5 min to pull images and install packages):
+First-Time Build Note: The first execution will take roughly 10–15 minutes. This is completely normal and expected. The build process installs native compiler dependencies for SQLite and executes a pre-fetch routine to download and cache the heavy PaddleOCR machine-learning models (~500MB+) directly into the Docker image layers, guaranteeing 100% offline functionality later.
 
 ```
 suraksha-aadhaar  | * Running on http://0.0.0.0:5000
 suraksha-server   | [server] Listening on http://127.0.0.1:3001
 suraksha-client   | ➜  Local:   http://localhost:5173/
+```
+**Database Seeding in Docker**
+The application automatically creates a persistent SQLite database folder on your host volume at ./server/data/suraksha.db. If you are launching the container for the very first time and need to populate the workbench with mock clients, test cases, and audit logs, execute the seed command inside the running server container:
+
+```
+docker compose exec server npm run seed
 ```
 
 Then open **http://localhost:5173** in your browser.
@@ -158,6 +164,9 @@ docker compose up -d
 
 # Stop all containers
 docker compose down
+
+# Run a hard database wipe and reseed
+docker compose exec server npm run seed
 
 # Watch combined logs from all services
 docker compose logs -f
@@ -317,6 +326,7 @@ SuRaksha2.0_FancyBear/
 │   │   └── security.js         ← Helmet, CORS, rate-limit
 │   └── db/
 │       ├── database.js         ← Pure-JS JSON store (no SQLite required)
+│       ├── data/               ← PERSISTENT VOLUME MOUNT (suraksha.db, -wal, -shm)
 │       ├── schema.sql          ← Reference schema
 │       └── seed.js             ← Demo data generator
 │
@@ -359,6 +369,7 @@ All routes except `/api/auth/login` and `/api/health` require a Bearer token.
 | `PORT` | `3001` | Express listen port |
 | `AADHAAR_SERVICE_HOST` | `127.0.0.1` | Flask service host (set to `aadhaar` in Docker) |
 | `AADHAAR_SERVICE_PORT` | `5000` | Flask service port |
+| `SURAKSHA_DB_PATH` | `/app/data/suraksha.db` | Target destination path for SQLite storage. Maps natively to `./server/data` on host volume. |
 
 ### React client (`client/`)
 

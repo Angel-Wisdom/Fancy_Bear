@@ -358,7 +358,7 @@ function analyzeItr(text) {
   return { findings, forceFail };
 }
 
-export function verifyDocument({ document, customer, ocr, metadata }) {
+export function verifyDocument({ document, customer, ocr, metadata, pixelForensics }) {
   const text = compactText(ocr?.text);
   const lowerText = text.toLowerCase();
   const fields = extractFields(text);
@@ -376,6 +376,21 @@ export function verifyDocument({ document, customer, ocr, metadata }) {
   }
   for (const signal of metadataSignals) addFinding(findings, 'medium', 'metadata.suspicious', signal);
   for (const signal of syntheticSignals.suspicious) addFinding(findings, 'high', 'image.synthetic_generated', signal);
+
+  // Pixel-level forensics (ELA, copy-move/clone detection, noise
+  // inconsistency, JPEG requantization) from the OpenCV microservice. These
+  // findings already arrive in {severity, code, message, evidence} shape.
+  if (pixelForensics?.applicable && !pixelForensics.unavailable) {
+    for (const finding of pixelForensics.findings || []) findings.push(finding);
+  } else if (pixelForensics?.unavailable) {
+    addFinding(
+      findings,
+      'low',
+      'pixel.forensics_unavailable',
+      'Pixel-level forensic analysis (ELA/clone/noise) could not run because the forensics microservice was unreachable; only metadata-based checks were applied.',
+      { error: pixelForensics.error },
+    );
+  }
 
   if (requirement) {
     const keywordHits = requirement.keywords.filter((keyword) => lowerText.includes(keyword));
@@ -449,5 +464,16 @@ export function verifyDocument({ document, customer, ocr, metadata }) {
     extractedFields: fields,
     findings,
     anomalyCount: findings.length,
+    pixelForensics: pixelForensics?.applicable ? {
+      unavailable: Boolean(pixelForensics.unavailable),
+      error: pixelForensics.error || null,
+      ela: pixelForensics.ela || null,
+      elaImageBase64: pixelForensics.elaImageBase64 || null,
+      cloneDetection: pixelForensics.cloneDetection || null,
+      noiseAnalysis: pixelForensics.noiseAnalysis || null,
+      quantization: pixelForensics.quantization || null,
+      globalNoiseFloor: pixelForensics.globalNoiseFloor || null,
+      contentCredentials: pixelForensics.contentCredentials || null,
+    } : { applicable: false },
   };
 }

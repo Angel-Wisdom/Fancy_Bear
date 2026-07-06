@@ -9,6 +9,8 @@ from pyzbar.pyzbar import decode as pyzbar_decode
 from pyaadhaar.utils import Qr_img_to_text, isSecureQr
 from pyaadhaar.decode import AadhaarSecureQr, AadhaarOldQr
 
+import forensics
+
 app = Flask(__name__)
 
 ERROR_MSG = (
@@ -112,6 +114,32 @@ def detect():
     finally:
         if tmp and os.path.exists(tmp):
             os.unlink(tmp)
+
+
+@app.route("/forensics/analyze", methods=["POST"])
+def forensics_analyze():
+    """
+    POST body: { "image": "<data:image/...;base64,...>" or raw base64 }
+
+    Runs pixel-level tamper analysis (ELA, copy-move/clone detection, noise
+    inconsistency, JPEG requantization) and returns findings in the same
+    {severity, code, message, evidence} shape used by the Node engines, plus
+    an ELA heatmap image (base64 PNG) for the frontend viewer.
+    """
+    payload = request.get_json(silent=True)
+    if not payload or "image" not in payload:
+        return jsonify({"error": "image field is required and must be a base64 string."}), 400
+
+    image_b64 = payload["image"]
+    if "," in image_b64:
+        image_b64 = image_b64.split(",", 1)[1]
+
+    try:
+        image_bytes = base64.b64decode(image_b64)
+        result = forensics.analyze(image_bytes)
+        return jsonify(result)
+    except Exception as exc:  # noqa: BLE001 - report failure back to caller, don't crash
+        return jsonify({"error": f"Pixel forensic analysis failed: {exc}"}), 500
 
 
 if __name__ == "__main__":

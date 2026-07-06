@@ -5,7 +5,7 @@ import { getDb } from '../db/database.js';
 import { verifyToken } from '../middleware/auth.js';
 import { sha256 } from '../engines/crypto-engine.js';
 import { extractTextFromBuffer } from '../engines/ocr-engine.js';
-import { inspectMetadata } from '../engines/forensics-engine.js';
+import { inspectMetadata, analyzePixelForensics } from '../engines/forensics-engine.js';
 import { verifyDocument } from '../engines/document-verification-engine.js';
 import { signReport } from '../engines/crypto-engine.js';
 import { writeAuditEntry } from '../utils/audit.js';
@@ -194,6 +194,7 @@ router.post('/upload', upload.array('files'), async (req, res) => {
     const hash = sha256(file.buffer);
     const extracted = await extractTextFromBuffer(file.buffer, file.originalname, file.mimetype);
     const metadata = inspectMetadata(file.buffer);
+    const pixelForensics = await analyzePixelForensics(file.buffer, file.mimetype);
     const id = randomUUID();
 
     const base64Data = file.buffer.toString('base64');
@@ -213,7 +214,7 @@ router.post('/upload', upload.array('files'), async (req, res) => {
       created_at: createdAt,
     };
     
-    const verification = verifyDocument({ document, customer, ocr: extracted, metadata });
+    const verification = verifyDocument({ document, customer, ocr: extracted, metadata, pixelForensics });
     const status = verification.status === 'pass' ? 'verified' : verification.status === 'warning' ? 'flagged' : 'rejected';
 
     db.prepare(`

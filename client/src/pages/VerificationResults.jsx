@@ -6,7 +6,7 @@ import MetadataPanel from '../components/MetadataPanel';
 import DocumentPreview from '../components/DocumentPreview'; // <-- Import the component
 import { api } from '../utils/api';
 
-const tabs = ['ocr', 'findings', 'fields', 'metadata', 'report'];
+const tabs = ['ocr', 'findings', 'forensics', 'fields', 'metadata', 'report'];
 
 function parseJson(value, fallback = null) {
   try {
@@ -220,6 +220,85 @@ export default function VerificationResults() {
                     <p>{finding.message}</p>
                   </div>
                 )) : <p className="muted">No anomaly findings are recorded for this document.</p>}
+              </div>
+            ) : null}
+            {activeTab === 'forensics' ? (
+              <div className="stack-list">
+                {!details?.pixelForensics?.applicable ? (
+                  <p className="muted">Pixel-level forensics only runs on raster images (JPEG/PNG/WebP/BMP), not on this file type.</p>
+                ) : details.pixelForensics.unavailable ? (
+                  <div className="alert-copy">
+                    <strong>FORENSICS SERVICE UNAVAILABLE</strong>
+                    <p>{details.pixelForensics.error || 'The pixel forensics microservice (aadhar/app.py) was unreachable. Only metadata-based checks ran for this document.'}</p>
+                  </div>
+                ) : (
+                  <>
+                    {details.pixelForensics.elaImageBase64 ? (
+                      <div>
+                        <strong>Error Level Analysis (ELA) Heatmap</strong>
+                        <p className="muted">
+                          Brighter regions had a different JPEG compression error than the rest of the
+                          image — a common signature of localized editing or spliced-in content.
+                          {' '}Outlier blocks: {((details.pixelForensics.ela?.outlierBlockRatio || 0) * 100).toFixed(1)}%
+                        </p>
+                        <img
+                          src={`data:image/png;base64,${details.pixelForensics.elaImageBase64}`}
+                          alt="ELA heatmap"
+                          style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border, #33415580)' }}
+                        />
+                      </div>
+                    ) : null}
+
+                    <div>
+                      <strong>Copy-Move (Clone) Detection</strong>
+                      <p className="muted">
+                        {details.pixelForensics.cloneDetection?.flagged
+                          ? `${details.pixelForensics.cloneDetection.matchCount} keypoint matches found between distant regions of the image — likely a pasted/duplicated area.`
+                          : 'No duplicated regions detected within the image.'}
+                      </p>
+                    </div>
+
+                    <div>
+                      <strong>Noise Consistency</strong>
+                      <p className="muted">
+                        {details.pixelForensics.noiseAnalysis?.flagged
+                          ? `${((details.pixelForensics.noiseAnalysis.outlierRatio || 0) * 100).toFixed(1)}% of the image has a noise pattern inconsistent with the rest — possible splice from a different source.`
+                          : 'Noise pattern is consistent across the image.'}
+                      </p>
+                    </div>
+
+                    {details.pixelForensics.quantization?.applicable ? (
+                      <div>
+                        <strong>JPEG Requantization</strong>
+                        <p className="muted">
+                          {details.pixelForensics.quantization.flagged
+                            ? 'Quantization tables suggest this JPEG was decoded and re-saved from an already-compressed source.'
+                            : 'Quantization tables look like a single-generation JPEG.'}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    <div>
+                      <strong>Whole-Image / AI-Generation Signal</strong>
+                      <p className="muted">
+                        {details.pixelForensics.globalNoiseFloor?.applicable === false
+                          ? 'Image was too detailed/noisy overall to get a reliable reading for this check.'
+                          : details.pixelForensics.globalNoiseFloor?.flagged
+                            ? `No natural sensor/scanner noise floor detected anywhere in the image (noise floor ${details.pixelForensics.globalNoiseFloor.noiseFloor}). Consistent with a fully AI-generated image or content drawn/filled entirely in an editor — though a very clean scan of a plain printed page can also read this way, so treat this as corroborating, not conclusive.`
+                            : 'Natural sensor/scanner noise floor detected, consistent with a real photograph or scan rather than a fully synthetic or hand-drawn image.'}
+                      </p>
+                    </div>
+
+                    <div>
+                      <strong>Content Credentials (C2PA)</strong>
+                      <p className="muted">
+                        {details.pixelForensics.contentCredentials?.found
+                          ? 'This file embeds a C2PA Content Credentials manifest, recording AI-generation or edit history directly in the file.'
+                          : 'No C2PA content-credentials manifest found. Note: most tools don\'t write one and it can be stripped, so absence is not proof of an unedited file.'}
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
             ) : null}
             {activeTab === 'fields' ? <pre className="code-block">{JSON.stringify(details?.extractedFields || {}, null, 2)}</pre> : null}

@@ -296,7 +296,7 @@ export default function DocumentsTab({ customerId }) {
                       <span className={status === 'flagged' ? 'text-danger font-bold' : ''}>{status}</span>
                     </div>
                   </div>
-                  {hasFindings && <ShieldAlert size={16} className="text-danger flex-shrink-0" />}
+                  {hasFindings && <ShieldAlert size={16} className="text-danger shrink-0" />}
                 </button>
               );
             }) : <p className="text-sm text-secondary p-4 col-span-full">No documents uploaded.</p>}
@@ -329,7 +329,7 @@ export default function DocumentsTab({ customerId }) {
         {/* BOTTOM RIGHT: Verification Results & Tabs */}
         {selectedDocument ? (
           <div className="panel flex-col gap-0 p-0 overflow-hidden h-full">
-            <div className="flex justify-between items-center p-5 border-b border-subtle bg-surface-base">
+            <div className="flex justify-between items-center px-6 py-5 border-b border-subtle bg-surface-base">
               <div className="flex-col">
                 <h3 className="text-lg font-bold">{selectedDocument.original_name}</h3>
                 <p className="text-sm text-secondary uppercase tracking-wide mt-1">{selectedDocument.doc_type.replace('_', ' ')}</p>
@@ -337,8 +337,8 @@ export default function DocumentsTab({ customerId }) {
               <RiskGauge value={score} label={label} />
             </div>
             
-            <div className="px-5 pt-3 bg-surface-raised">
-              <div className="flex gap-4 border-b border-subtle">
+            <div className="px-6 pt-3 bg-surface-raised">
+              <div className="flex gap-6 border-b border-subtle">
                 {documentTabs.map((tab) => (
                   <button 
                     key={tab} type="button" 
@@ -349,8 +349,8 @@ export default function DocumentsTab({ customerId }) {
               </div>
             </div>
             
-            <div className="p-5 bg-surface-raised overflow-y-auto" style={{ maxHeight: '450px' }}>
-              {activeDocViewTab === 'ocr' && <pre className="text-sm text-secondary font-mono whitespace-pre-wrap break-words">{ocrText}</pre>}
+            <div className="document-tab-content" style={{ maxHeight: "450px" }}>
+              {activeDocViewTab === 'ocr' && <pre className="document-pre">{ocrText}</pre>}
               {activeDocViewTab === 'findings' && (
                 <div className="flex-col gap-3">
                   {details?.findings?.length ? details.findings.map((f) => (
@@ -361,9 +361,9 @@ export default function DocumentsTab({ customerId }) {
                   )) : <p className="text-sm text-secondary">No anomaly findings recorded.</p>}
                 </div>
               )}
-              {activeDocViewTab === 'fields' && <pre className="text-sm text-secondary font-mono">{JSON.stringify(details?.extractedFields || {}, null, 2)}</pre>}
+              {activeDocViewTab === 'fields' && <pre className="document-pre">{JSON.stringify(details?.extractedFields || {}, null, 2)}</pre>}
               {activeDocViewTab === 'metadata' && <MetadataPanel metadata={metadata} />}
-              {activeDocViewTab === 'report' && <pre className="text-sm text-secondary font-mono">{JSON.stringify(details || selectedDocument?.verification || {}, null, 2)}</pre>}
+              {activeDocViewTab === 'report' && <pre className="document-pre">{JSON.stringify(details || selectedDocument?.verification || {}, null, 2)}</pre>}
             </div>
           </div>
         ) : (

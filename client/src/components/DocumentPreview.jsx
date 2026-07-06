@@ -3,27 +3,34 @@ import { Eye, FileText, Image as ImageIcon } from 'lucide-react';
 
 export default function DocumentPreview({ file, hash }) {
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [loadError, setLoadError] = useState(false);
 
+  // Effect 1: produce a blob URL for the file (either local File or remote fetch)
   useEffect(() => {
     if (!file) {
       setPreviewUrl(null);
+      setLoadError(false);
       return;
     }
 
+    let isCancelled = false;
+    let createdObjectUrl = null;
+
     // CASE 1: Fresh local staging file
     if (file instanceof File || file instanceof Blob) {
-      const url = URL.createObjectURL(file);
-      setPreviewUrl(url);
-      return () => URL.revokeObjectURL(url);
+      createdObjectUrl = URL.createObjectURL(file);
+      setPreviewUrl(createdObjectUrl);
+      setLoadError(false);
+      return () => {
+        isCancelled = true;
+        if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl);
+      };
     }
 
     // CASE 2: Historical database row (Auth-Protected)
     if (file.id || hash) {
-      let isCancelled = false;
       const targetUrl = `/api/documents/${file.id || hash}/file`;
-
-      // Retrieve your token (adjust if you use cookies/sessionStorage)
-      const token = localStorage.getItem('suraksha_token')
+      const token = localStorage.getItem('suraksha_token');
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
 
       fetch(targetUrl, { headers })
@@ -33,33 +40,35 @@ export default function DocumentPreview({ file, hash }) {
         })
         .then((blob) => {
           if (isCancelled) return;
-          const objectUrl = URL.createObjectURL(blob);
-          setPreviewUrl(objectUrl);
+          createdObjectUrl = URL.createObjectURL(blob);
+          setPreviewUrl(createdObjectUrl);
+          setLoadError(false);
         })
         .catch((err) => {
           console.error("Failed to load secure preview:", err);
-          if (!isCancelled) setPreviewUrl(null);
+          if (!isCancelled) {
+            setPreviewUrl(null);
+            setLoadError(true);
+          }
         });
 
       return () => {
         isCancelled = true;
+        if (createdObjectUrl) URL.revokeObjectURL(createdObjectUrl);
       };
     }
-  }, [file, hash]);
 
-  // Prevent memory leaks by cleaning up the network blobs when the component unmounts or changes
-  useEffect(() => {
-    return () => {
-      if (previewUrl && previewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(previewUrl);
-      }
-    };
-  }, [previewUrl]);
+    // No usable identifier
+    return () => {};
+  }, [file, hash]);
 
   if (!file) {
     return (
-      <div className="document-preview placeholder-preview">
-        <p className="muted">No file selected for preview</p>
+      <div className="placeholder-preview">
+        <div className="flex-col items-center gap-2">
+          <ImageIcon size={32} className="muted" />
+          <p className="muted">No file selected for preview</p>
+        </div>
       </div>
     );
   }
@@ -73,8 +82,14 @@ export default function DocumentPreview({ file, hash }) {
 
   return (
     <div className="document-preview-container">
+      {/* Visual area — fills available space, image fits inside */}
       <div className="document-preview-visual">
-        {isImage && previewUrl ? (
+        {loadError ? (
+          <div className="generic-fallback-icon">
+            <ImageIcon size={48} />
+            <span>Preview load failed</span>
+          </div>
+        ) : isImage && previewUrl ? (
           <img src={previewUrl} alt={fileName} className="thumbnail-render" />
         ) : isPdf && previewUrl ? (
           <object data={previewUrl} type="application/pdf" className="pdf-render-frame">
@@ -83,6 +98,11 @@ export default function DocumentPreview({ file, hash }) {
               <span>PDF Preview Available</span>
             </div>
           </object>
+        ) : !previewUrl ? (
+          <div className="generic-fallback-icon">
+            <FileText size={48} />
+            <span>Loading preview…</span>
+          </div>
         ) : (
           <div className="generic-fallback-icon">
             <ImageIcon size={48} />
@@ -91,15 +111,16 @@ export default function DocumentPreview({ file, hash }) {
         )}
       </div>
 
+      {/* Details footer — fixed height, doesn't shrink */}
       <div className="document-preview-details">
         <div className="file-meta-header">
-          <Eye size={16} className="text-accent" />
-          <strong>{fileName}</strong>
+          <Eye size={16} className="text-accent shrink-0" />
+          <strong title={fileName}>{fileName}</strong>
         </div>
         <p className="file-type-label">
-          {fileType || 'Unknown Type'} • {(fileSize / 1024).toFixed(1)} KB
+          {fileType || 'Unknown Type'} • {(Number(fileSize) / 1024).toFixed(1)} KB
         </p>
-        
+
         <div className="fingerprint-box">
           <span className="fingerprint-label">SHA-256 Checksum:</span>
           {hash || file.file_hash || file.fingerprint ? (

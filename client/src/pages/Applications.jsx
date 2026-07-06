@@ -3,6 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Search, ChevronRight } from 'lucide-react';
 import { api } from '../utils/api';
 
+/**
+ * Applications
+ * ------------
+ * Lists all applicants with search and create-new actions.
+ *
+ * Logic & data flow unchanged from original.
+ */
 export default function Applications() {
   const [customers, setCustomers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -13,7 +20,6 @@ export default function Applications() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Relying on the existing endpoint per the UI Rebuild Plan
     api.get('/api/customers')
       .then(res => {
         setCustomers(res.customers || res || []);
@@ -54,7 +60,7 @@ export default function Applications() {
 
   return (
     <div className="flex-col gap-6 w-full">
-      <div className="flex justify-between items-end mb-4">
+      <div className="flex justify-between items-end mb-4 flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold mb-1">Applications</h2>
           <p className="text-secondary text-sm">Select an applicant to open their underwriting workspace.</p>
@@ -64,7 +70,7 @@ export default function Applications() {
       <div className="panel flex-col gap-4">
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <form className="flex items-end gap-3 flex-wrap" onSubmit={handleCreateApplicant}>
-            <label className="flex-col gap-2 min-w-[260px]">
+            <label className="flex-col gap-2" style={{ minWidth: '260px' }}>
               Add new applicant
               <input
                 type="text"
@@ -75,15 +81,15 @@ export default function Applications() {
             </label>
             <button className="btn-primary" type="submit" disabled={creatingApplicant}>
               <Plus size={16} />
-              {creatingApplicant ? 'Creating...' : 'Create applicant'}
+              {creatingApplicant ? 'Creating…' : 'Create applicant'}
             </button>
           </form>
 
           <div className="search-box" style={{ maxWidth: '320px', backgroundColor: 'var(--surface-raised)' }}>
-            <Search size={16} className="text-tertiary" />
+            <Search size={16} className="text-tertiary shrink-0" />
             <input
               type="text"
-              placeholder="Search by name or PAN..."
+              placeholder="Search by name or PAN…"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className="w-full"
@@ -96,51 +102,53 @@ export default function Applications() {
       </div>
 
       <div className="panel p-0 overflow-hidden w-full">
-        <table className="compact-table w-full">
-          <thead>
-            <tr>
-              <th>Applicant Name</th>
-              <th>PAN Identifier</th>
-              <th>Applied On</th>
-              <th>System Risk Score</th>
-              <th style={{ textAlign: 'right' }}>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
+        <div className="table-scroll-wrap">
+          <table className="compact-table w-full">
+            <thead>
               <tr>
-                <td colSpan="5" className="py-4 text-center text-secondary text-sm">Loading applications...</td>
+                <th>Applicant Name</th>
+                <th>PAN Identifier</th>
+                <th>Applied On</th>
+                <th>System Risk Score</th>
+                <th style={{ textAlign: 'right' }}>Action</th>
               </tr>
-            ) : filtered.length > 0 ? (
-              filtered.map(customer => (
-                <tr 
-                  key={customer.id} 
-                  onClick={() => navigate(`/applications/${customer.id}`)}
-                  style={{ cursor: 'pointer' }}
-                  className="hover:bg-muted"
-                >
-                  <td className="font-bold text-primary">{customer.full_name}</td>
-                  <td className="text-secondary uppercase tracking-wide">{customer.pan_number || 'N/A'}</td>
-                  <td className="text-secondary">{new Date(customer.created_at).toLocaleDateString()}</td>
-                  <td>
-                    <span className={`badge ${customer.risk_score > 70 ? 'badge-danger' : customer.risk_score > 30 ? 'badge-warning' : 'badge-success'}`}>
-                      {customer.risk_score || 0}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <ChevronRight size={16} className="text-tertiary inline" />
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan="5" className="py-4 text-center text-secondary text-sm">Loading applications…</td>
+                </tr>
+              ) : filtered.length > 0 ? (
+                filtered.map(customer => (
+                  <tr
+                    key={customer.id}
+                    onClick={() => navigate(`/applications/${customer.id}`)}
+                    style={{ cursor: 'pointer' }}
+                    className="hover:bg-muted"
+                  >
+                    <td className="font-bold text-primary">{customer.full_name}</td>
+                    <td className="text-secondary uppercase tracking-wide font-mono text-xs">{customer.pan_number || 'N/A'}</td>
+                    <td className="text-secondary">{customer.created_at ? new Date(customer.created_at).toLocaleDateString() : '—'}</td>
+                    <td>
+                      <span className={`badge ${customer.risk_score > 70 ? 'badge-danger' : customer.risk_score > 30 ? 'badge-warning' : 'badge-success'}`}>
+                        {customer.risk_score || 0}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <ChevronRight size={16} className="text-tertiary inline" />
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="5" className="py-6 text-center text-secondary text-sm">
+                    No applications match your search.
                   </td>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="5" className="py-6 text-center text-secondary text-sm">
-                  No applications match your search.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

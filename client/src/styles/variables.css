@@ -102,4 +102,8 @@
   --sidebar-collapsed:    64px;
   --header-height:        56px;
   --content-max-width:    100%;
+
+  /* ── Risk Tone Thresholds (used by RiskGauge data-tone attribute) ── */
+  --risk-threshold-low:   40;
+  --risk-threshold-medium: 70;
 }

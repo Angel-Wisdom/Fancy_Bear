@@ -221,14 +221,43 @@ router.post('/upload', upload.array('files'), async (req, res) => {
 
     // ── Run OCR + pixel forensics + Aadhaar QR scan in parallel ──
     const isAadhaarCard = docType === 'aadhaar_card';
+    const isPanCard = docType === 'pan_card';
+
+    // Build OCR options per document type:
+    //   Aadhaar: eng+hin, PSM 3 (full text) + PSM 11 (Aadhaar number)
+    //   PAN:     eng, raw image (no preprocessing), PSM 3
+    //   Other:   eng, default preprocessing
+    const primaryOcrOpts = isPanCard
+      ? { lang: 'eng', psm: 3, skipPreprocess: true }
+      : isAadhaarCard
+        ? { lang: 'eng+hin', psm: 3 }
+        : {};
+
     const [extracted, pixelForensics, qrScan] = await Promise.all([
-      extractTextFromBuffer(file.buffer, file.originalname, file.mimetype,
-        isAadhaarCard ? { lang: 'eng+hin', psm: 3 } : {}),
+      extractTextFromBuffer(file.buffer, file.originalname, file.mimetype, primaryOcrOpts),
       analyzePixelForensics(file.buffer, file.mimetype),
       isAadhaarCard
         ? scanAadhaarQr(file.buffer, file.mimetype)
         : Promise.resolve(null),
     ]);
+
+    // ── Aadhaar: secondary PSM 11 pass to find the 12-digit number ──
+    // eng+hin + PSM 11 (sparse text) is the ONLY configuration that
+    // reliably reads the Aadhaar number from bilingual cards.
+    // PSM 3 often misses it because digits get merged into Hindi text blocks.
+    let aadhaarSecondaryText = '';
+    if (isAadhaarCard && extracted.engine === 'tesseract.js') {
+      try {
+        const secondary = await extractTextFromBuffer(
+          file.buffer, file.originalname, file.mimetype,
+          { lang: 'eng+hin', psm: 11, skipPreprocess: false },
+        );
+        aadhaarSecondaryText = secondary.text;
+        console.log(`[aadhaar] Secondary PSM 11 pass: ${(aadhaarSecondaryText || '').length} chars`);
+      } catch (err) {
+        console.warn('[aadhaar] Secondary PSM 11 OCR failed:', err.message);
+      }
+    }
 
     // ── For Aadhaar cards: clean OCR text (remove Hindi garble) ──
     const metadata = inspectMetadata(file.buffer);
@@ -241,15 +270,6 @@ router.post('/upload', upload.array('files'), async (req, res) => {
       ocrTextToStore = cleaned.text;
       ocrTextForVerification = cleaned.text;
     }
-
-    // ── Aadhaar number recovery from raw OCR ──
-    // Tesseract often misses the 12-digit number when it's adjacent
-    // to garbled Hindi text. Instead of raw digit hunting (which produces
-    // false positives), we rely on:
-    //   1. eng+hin bilingual Tesseract (reads Devanagari properly)
-    //   2. QR code data (ground truth, already cross-checked)
-    
-    let recoveredAadhaar = null;
 
     const id = randomUUID();
 
@@ -270,7 +290,12 @@ router.post('/upload', upload.array('files'), async (req, res) => {
       created_at: createdAt,
     };
     
-    const ocrForVerification = { ...extracted, text: ocrTextForVerification };
+    const ocrForVerification = {
+      ...extracted,
+      text: ocrTextForVerification,
+      // Pass secondary PSM 11 text for Aadhaar number recovery
+      secondaryText: aadhaarSecondaryText || null,
+    };
     const verification = verifyDocument({ document, customer, ocr: ocrForVerification, metadata, pixelForensics, qrScan });
     const status = verification.status === 'pass' ? 'verified' : verification.status === 'warning' ? 'flagged' : 'rejected';
 

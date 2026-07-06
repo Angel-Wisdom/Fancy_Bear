@@ -3,6 +3,8 @@ import { sha256 } from './crypto-engine.js';
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 const AADHAAR_HASH_SALT = process.env.AADHAAR_HASH_SALT || 'suraksha-aadhaar-salt-dev-only';
 
+// ── Verhoeff (Aadhaar checksum) ──────────────────────────────
+
 const VERHOEFF_D = [
   [0,1,2,3,4,5,6,7,8,9],[1,2,3,4,0,6,7,8,9,5],
   [2,3,4,0,1,7,8,9,5,6],[3,4,0,1,2,8,9,5,6,7],
@@ -27,9 +29,109 @@ function verhoeffChecksum(num) {
   return VERHOEFF_INV[c];
 }
 
+// ── PAN Validation ───────────────────────────────────────────
+
+/**
+ * Valid 4th-character holder type codes on Indian PAN cards.
+ * C = Company, P = Person, H = HUF, F = Firm, A = AOP,
+ * T = Trust, B = BOI, L = Local Authority, J = Artificial Juridical Person,
+ * G = Government
+ */
+const PAN_HOLDER_TYPES = new Set(['C','P','H','F','A','T','B','L','J','G']);
+
+const PAN_HOLDER_TYPE_NAMES = {
+  C: 'Company', P: 'Person', H: 'HUF', F: 'Firm',
+  A: 'Association of Persons', T: 'Trust', B: 'Body of Individuals',
+  L: 'Local Authority', J: 'Artificial Juridical Person', G: 'Government',
+};
+
+/**
+ * PAN check-digit algorithm (NSDL specification).
+ *
+ * Letter values: A=10, B=11, C=12 … Z=35 (consecutive base-10).
+ * Weights:       [1, 2, 1, 2, 1, 2, 1, 2, 1]  (positions 1–9).
+ * For each product ≥ 10, digit-sum it (e.g. 24 → 2+4 = 6).
+ * Sum all adjusted products, check = (10 − sum%10) % 10.
+ * Check-digit char: 0→A, 1→B, 2→C … 9→J.
+ */
+function computePanCheckDigit(pan9) {
+  const WEIGHTS = [1, 2, 1, 2, 1, 2, 1, 2, 1];
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    const ch = pan9[i].toUpperCase();
+    const val = ch >= 'A' && ch <= 'Z' ? (ch.charCodeAt(0) - 65) + 10 : Number(ch);
+    let product = val * WEIGHTS[i];
+    if (product >= 10) product = Math.floor(product / 10) + (product % 10);
+    sum += product;
+  }
+  const checkVal = (10 - (sum % 10)) % 10;
+  return String.fromCharCode(65 + checkVal); // 0→A, 1→B, …, 9→J
+}
+
+/**
+ * Basic format check only — used for quick regex gating.
+ * Returns true if the string matches [A-Z]{5}[0-9]{4}[A-Z].
+ */
 export function validatePan(pan) {
   return PAN_REGEX.test(String(pan || '').toUpperCase());
 }
+
+/**
+ * Deep PAN structure validation.
+ *
+ * Returns { valid, formatOk, holderType, holderTypeName, holderTypeValid,
+ *           surnameInitial, checkDigitValid, checkDigitExpected, errors[] }
+ *
+ * - formatOk:        regex match
+ * - holderTypeValid: 4th char is in the known set (C,P,H,F,A,T,B,L,J,G)
+ * - checkDigitValid: 10th char matches the computed check digit
+ * - surnameInitial:  5th character (first letter of surname per PAN spec)
+ * - checkDigitExpected: what the 10th char should be
+ */
+export function validatePanStructure(pan) {
+  const upper = String(pan || '').toUpperCase().replace(/\s+/g, '');
+  const result = {
+    valid: false,
+    formatOk: false,
+    holderType: null,
+    holderTypeName: null,
+    holderTypeValid: false,
+    surnameInitial: null,
+    checkDigitValid: false,
+    checkDigitExpected: null,
+    errors: [],
+  };
+
+  if (!PAN_REGEX.test(upper)) {
+    result.errors.push('PAN does not match required format [A-Z]{5}[0-9]{4}[A-Z]');
+    return result;
+  }
+  result.formatOk = true;
+
+  // 4th char — holder type
+  result.holderType = upper[3];
+  result.holderTypeName = PAN_HOLDER_TYPE_NAMES[result.holderType] || 'Unknown';
+  result.holderTypeValid = PAN_HOLDER_TYPES.has(result.holderType);
+  if (!result.holderTypeValid) {
+    result.errors.push(`Invalid holder type "${result.holderType}" at position 4`);
+  }
+
+  // 5th char — surname initial
+  result.surnameInitial = upper[4];
+
+  // 10th char — check digit
+  const expected = computePanCheckDigit(upper.slice(0, 9));
+  result.checkDigitExpected = expected;
+  result.checkDigitValid = upper[9] === expected;
+  if (!result.checkDigitValid) {
+    result.errors.push(`Check digit mismatch: expected "${expected}", got "${upper[9]}"`);
+  }
+
+  result.valid = result.formatOk && result.holderTypeValid && result.checkDigitValid;
+  return result;
+}
+
+// ── Aadhaar Validation ───────────────────────────────────────
 
 export function validateAadhaar(aadhaar) {
   const value = String(aadhaar || '').replace(/\s+/g, '');

@@ -18,6 +18,7 @@ function decodePrintableText(buffer) {
 }
 
 // ── Image Preprocessing (sharp) ──────────────────────────────
+//
 // Aadhaar cards are often photos of printed cards — skewed lighting,
 // JPEG compression artifacts, low contrast.  Preprocessing the image
 // before Tesseract dramatically improves OCR accuracy.
@@ -25,6 +26,11 @@ function decodePrintableText(buffer) {
 // Pipeline:  grayscale → normalize contrast → mild sharpen → PNG output
 // PNG avoids introducing additional JPEG compression noise that confuses
 // Tesseract's character segmentation.
+//
+// PAN cards are DIFFERENT: the normalize+sharpen pipeline actually
+// DESTROYS PAN text readability (amplifies hologram/embossed noise,
+// drops confidence from ~72% to ~34%).  PAN cards should be OCR'd
+// with the raw image (or at most light grayscale).
 
 /**
  * Preprocess a raster image buffer for better OCR results.
@@ -79,12 +85,16 @@ async function extractPdfText(buffer) {
 }
 
 async function extractImageText(buffer, options = {}) {
-  // Preprocess image for better OCR accuracy
-  const preprocessed = await preprocessImageForOcr(buffer);
-  const preprocessedSizeKB = Math.round(preprocessed.length / 1024);
+  // skipPreprocess: used for PAN cards where preprocessing destroys text
+  const skipPreprocess = options.skipPreprocess === true;
+  const imageBuffer = skipPreprocess
+    ? buffer
+    : await preprocessImageForOcr(buffer);
+
+  const preprocessedSizeKB = Math.round(imageBuffer.length / 1024);
   const originalSizeKB = Math.round(buffer.length / 1024);
   const lang = options.lang || 'eng';
-  console.log(`[ocr] Image preprocessing: ${originalSizeKB}KB → ${preprocessedSizeKB}KB (PNG), lang: ${lang}`);
+  console.log(`[ocr] ${skipPreprocess ? 'Raw' : 'Preprocessed'}: ${originalSizeKB}KB → ${preprocessedSizeKB}KB, lang: ${lang}, psm: ${options.psm || 3}`);
 
   const worker = await createWorker(lang);
   try {
@@ -93,13 +103,13 @@ async function extractImageText(buffer, options = {}) {
     if (options.psm) {
       await worker.setParameters({ tessedit_pageseg_mode: String(options.psm) });
     }
-    const result = await worker.recognize(preprocessed);
+    const result = await worker.recognize(imageBuffer);
     return {
       text: (result.data.text || '').trim(),
       confidence: Math.max(0, Math.min(100, Number(result.data.confidence) || 0)),
       engine: 'tesseract.js',
       pages: 1,
-      preprocessed: true,
+      preprocessed: !skipPreprocess,
       ocrLang: lang,
     };
   } catch (err) {

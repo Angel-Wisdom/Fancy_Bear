@@ -1,11 +1,13 @@
 import { detectTamperSignals } from './forensics-engine.js';
-import { validateAadhaar, validatePan, hashAadhaar } from './kyc-engine.js';
+import { validateAadhaar, validatePan, validatePanStructure, hashAadhaar } from './kyc-engine.js';
 import { extractNameFromAadhaarOcr, crossCheckQrData } from './aadhaar-engine.js';
 
 const DOC_REQUIREMENTS = {
   pan_card: {
     fields: ['pan'],
-    keywords: ['income tax', 'permanent account', 'pan'],
+    // NOTE: 'pan' removed — the word "PAN" is not printed on PAN cards.
+    // Keywords are informational only; OCR quality on PAN cards varies.
+    keywords: ['income tax', 'permanent account', 'government of india', 'govt'],
   },
   aadhaar_card: {
     fields: ['aadhaar'],
@@ -55,9 +57,25 @@ function extractFields(text) {
   const panMatches = [...normalized.matchAll(/\b[A-Z]{5}[0-9]{4}[A-Z]\b/g)].map((match) => match[0]);
   const passportMatches = [...normalized.matchAll(/\b[A-Z][0-9]{7}\b/g)].map((match) => match[0]);
   const dateMatches = [...normalized.matchAll(/\b(?:\d{2}[/-]\d{2}[/-]\d{4}|\d{4}-\d{2}-\d{2})\b/g)].map((match) => match[0]);
-  const amountMatches = [...normalized.matchAll(/(?:INR|RS\.?|₹)?\s?([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)\b/g)]
+  const rawAmountMatches = [...normalized.matchAll(/(?:INR|RS\.?|₹)?\s?([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)\b/g)]
     .map((match) => Number(String(match[1]).replace(/,/g, '')))
     .filter((value) => Number.isFinite(value) && value >= 100);
+
+  // ── Enrollment number false-positive filter ──
+  // Aadhaar cards contain "Enrollment No. 2821/27328/03977" — the
+  // slash-separated groups (2821, 27328, 3977) pass the ≥100 filter.
+  // Detect this pattern and exclude those specific numbers.
+  const amountMatches = [];
+  const enrollmentNumbers = new Set();
+  const textLines = (text || '').split('\n');
+  for (const line of textLines) {
+    if (/enrollment\s*(no|number)/i.test(line)) {
+      for (const m of line.matchAll(/\d+/g)) enrollmentNumbers.add(Number(m[0]));
+    }
+  }
+  for (const val of rawAmountMatches) {
+    if (!enrollmentNumbers.has(val)) amountMatches.push(val);
+  }
   const surveyNumber = normalized.match(/\b(?:SURVEY|SY|S\.NO|SURVEY NO)\.?\s*[:#-]?\s*([0-9]+(?:\/[0-9A-Z-]+)?)\b/)?.[1] || null;
 
   return {
@@ -457,6 +475,123 @@ function nameTokensOverlap(nameA, nameB) {
   return matched.length >= Math.ceil(Math.min(normA.length, normB.length) * 0.6);
 }
 
+// ── PAN Card Name Extraction ─────────────────────────────────
+
+/**
+ * Extract the cardholder's name from PAN card OCR text.
+ *
+ * PAN card layout (typical):
+ *   INCOME TAX DEPARTMENT GOVT. OF INDIA
+ *   Permanent Account Number Card
+ *   <PAN NUMBER>
+ *   <Name label line>
+ *   CARDHOLDER NAME
+ *   <Father's Name label line>
+ *   FATHER'S NAME
+ *   <DOB label>
+ *   DD/MM/YYYY
+ *
+ * Strategy:
+ *  1. Look for "Name" label (case-insensitive) and take the next
+ *     non-empty, non-label line as the name.
+ *  2. Also look for a prominent ALL-CAPS name-like line (2-4 words,
+ *     each 3+ chars) that doesn't match known label text.
+ *  3. Fall back to the longest plausible name-like line.
+ *
+ * Returns { name, fatherName, dob, confidence } or null.
+ */
+function extractPanCardFields(text) {
+  if (!text) return null;
+
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 3) return null;
+
+  const LABEL_RE = /^(?:name|father|date\s*of\s*birth|dob|permanent\s*account|income\s*tax|govt|card|signature|photo)/i;
+  let name = null;
+  let fatherName = null;
+  let dob = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Detect "Name" label (not "Father's Name")
+    if (/\bname\b/i.test(line) && !/father/i.test(line) && !LABEL_RE.test(line.replace(/\bname\b/i, ''))) {
+      // Take next non-empty, non-label line as the name
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+        const candidate = lines[j];
+        if (!candidate) continue;
+        if (LABEL_RE.test(candidate)) continue;
+        // Plausible name: 1-4 words, each 2+ chars, starts with uppercase
+        const nameMatch = candidate.match(/\b[A-Z][a-z]{1,}(\s+[A-Z][a-z]{1,}){0,4}\b/);
+        if (nameMatch && nameMatch[0].length >= 3) {
+          name = nameMatch[0].trim();
+          break;
+        }
+      }
+    }
+
+    // Detect "Father's Name" label
+    if (/father'?s?\s*name/i.test(line)) {
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+        const candidate = lines[j];
+        if (!candidate) continue;
+        if (LABEL_RE.test(candidate)) continue;
+        const nameMatch = candidate.match(/\b[A-Z][a-z]{1,}(\s+[A-Z][a-z]{1,}){0,5}\b/);
+        if (nameMatch && nameMatch[0].length >= 3) {
+          fatherName = nameMatch[0].trim();
+          break;
+        }
+      }
+    }
+
+    // Detect DOB
+    if (/date\s*of\s*birth|dob/i.test(line)) {
+      const dobMatch = line.match(/(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/);
+      if (dobMatch) {
+        dob = dobMatch[1];
+      } else {
+        // DOB might be on the next line
+        for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+          const m = lines[j]?.match(/(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/);
+          if (m) { dob = m[1]; break; }
+        }
+      }
+    }
+  }
+
+  // Fallback: if no name found via labels, look for the most prominent
+  // ALL-CAPS name-like line (after the header lines)
+  if (!name) {
+    const PAN_LABELS = new Set([
+      'income', 'tax', 'department', 'govt', 'of', 'india',
+      'permanent', 'account', 'number', 'card', 'name',
+      "father's", 'father', 'date', 'birth', 'dob', 'signature',
+    ]);
+    for (const line of lines) {
+      const words = line.split(/\s+/).filter(w => w.length > 1);
+      if (words.length >= 2 && words.length <= 5) {
+        const allTitleCase = words.every(w => /^[A-Z][a-z]+$/.test(w));
+        const noLabelWords = words.every(w => !PAN_LABELS.has(w.toLowerCase()));
+        if (allTitleCase && noLabelWords && line.length >= 5) {
+          name = line;
+          break;
+        }
+      }
+    }
+  }
+
+  const confidence = name ? 'medium' : 'low';
+  return { name: name || null, fatherName: fatherName || null, dob: dob || null, confidence };
+}
+
+function normalizeDate(value) {
+  const str = String(value || '').trim();
+  const m1 = str.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+  if (m1) return `${m1[3]}-${m1[2].padStart(2, '0')}-${m1[1].padStart(2, '0')}`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  return '';
+}
+
 export function verifyDocument({ document, customer, ocr, metadata, pixelForensics, qrScan }) {
   const text = compactText(ocr?.text);
   const lowerText = text.toLowerCase();
@@ -467,6 +602,27 @@ export function verifyDocument({ document, customer, ocr, metadata, pixelForensi
   const metadataSignals = metadata?.suspicious || [];
   const syntheticSignals = detectSyntheticImageSignals(document, metadata, ocr, text);
   let forceFail = false;
+
+  // ── Aadhaar: secondary PSM 11 text → recover Aadhaar number ──
+  // The main PSM 3 pass often misses the 12-digit number. The secondary
+  // PSM 11 (eng+hin, sparse text) pass reliably finds it.
+  if (document.doc_type === 'aadhaar_card' && ocr?.secondaryText) {
+    const secFields = extractFields(ocr.secondaryText);
+    // If secondary found an Aadhaar number but primary didn't, use it
+    if (secFields.aadhaar && !fields.aadhaar) {
+      fields.aadhaar = secFields.aadhaar;
+      findings.push({
+        severity: 'info',
+        code: 'aadhaar.recovered_secondary_psm11',
+        message: `Aadhaar number ${fields.aadhaar.replace(/(\d{4})/g, '$1 ').trim()} recovered from secondary OCR pass (PSM 11 sparse text mode).`,
+        evidence: { source: 'psm11_secondary' },
+      });
+    }
+    // Also merge any dates found in secondary that primary missed
+    for (const d of secFields.dates) {
+      if (!fields.dates.includes(d)) fields.dates.push(d);
+    }
+  }
 
   // ── Aadhaar-specific: extract name from OCR ──
   // Two-pass strategy:
@@ -482,6 +638,22 @@ export function verifyDocument({ document, customer, ocr, metadata, pixelForensi
     if (nameResult) {
       ocrExtractedName = nameResult.name;
       ocrNameSource = 'heuristic';
+    }
+  }
+
+  // ── PAN-specific: extract name, father's name, DOB from card ──
+  let panExtractedName = null;
+  let panFatherName = null;
+  let panDob = null;
+  if (document.doc_type === 'pan_card') {
+    const panFields = extractPanCardFields(text);
+    if (panFields) {
+      panExtractedName = panFields.name;
+      panFatherName = panFields.fatherName;
+      panDob = panFields.dob;
+      fields.name = panExtractedName;
+      if (panFatherName) fields.fatherName = panFatherName;
+      if (panDob && !fields.dates.includes(panDob)) fields.dates.push(panDob);
     }
   }
 
@@ -586,7 +758,11 @@ export function verifyDocument({ document, customer, ocr, metadata, pixelForensi
   if (requirement) {
     const keywordHits = requirement.keywords.filter((keyword) => lowerText.includes(keyword));
     if (text && keywordHits.length === 0) {
-      addFinding(findings, 'medium', 'document.type_mismatch', `OCR text does not contain expected ${document.doc_type.replaceAll('_', ' ')} markers.`);
+      // PAN cards: downgrade to 'low' — OCR often fails to read the
+      // header text due to holograms/embossing, so missing keywords
+      // are not a reliable indicator of a wrong document type.
+      const severity = document.doc_type === 'pan_card' ? 'low' : 'medium';
+      addFinding(findings, severity, 'document.type_mismatch', `OCR text does not contain expected ${document.doc_type.replaceAll('_', ' ')} markers.`);
     }
 
     for (const requiredField of requirement.fields) {
@@ -596,7 +772,108 @@ export function verifyDocument({ document, customer, ocr, metadata, pixelForensi
     }
   }
 
-  if (fields.pan && !validatePan(fields.pan)) addFinding(findings, 'high', 'pan.invalid', 'Extracted PAN has an invalid format.', { pan: fields.pan });
+  // ── PAN structural validation ──
+  if (fields.pan) {
+    const panStruct = validatePanStructure(fields.pan);
+
+    if (!panStruct.formatOk) {
+      addFinding(findings, 'high', 'pan.invalid', 'Extracted PAN has an invalid format.', { pan: fields.pan });
+    } else {
+      // Format is valid — run deep checks
+      addFinding(findings, 'info', 'pan.found', `PAN number extracted: ${fields.pan}`, { pan: fields.pan });
+
+      if (!panStruct.holderTypeValid) {
+        addFinding(findings, 'high', 'pan.invalid_holder_type',
+          `PAN 4th character "${panStruct.holderType}" is not a valid holder type code. Expected one of: C,P,H,F,A,T,B,L,J,G.`,
+          { pan: fields.pan, holderType: panStruct.holderType });
+      }
+
+      if (!panStruct.checkDigitValid) {
+        addFinding(findings, 'high', 'pan.check_digit_failed',
+          `PAN check digit (10th character) failed validation. Expected "${panStruct.checkDigitExpected}", got "${fields.pan[9]}". The PAN may be forged or misread by OCR.`,
+          { pan: fields.pan, expected: panStruct.checkDigitExpected, actual: fields.pan[9] });
+      }
+
+      // 5th char = surname initial check
+      if (panExtractedName) {
+        // Extract surname: last word of the name
+        const nameWords = panExtractedName.trim().split(/\s+/);
+        const surname = nameWords[nameWords.length - 1] || '';
+        const surnameInitial = surname[0]?.toUpperCase() || '';
+        if (surnameInitial && panStruct.surnameInitial) {
+          if (surnameInitial === panStruct.surnameInitial) {
+            addFinding(findings, 'info', 'pan.surname_match',
+              `PAN 5th character "${panStruct.surnameInitial}" matches surname initial from extracted name "${surname}".`,
+              { pan: fields.pan, surnameInitial: panStruct.surnameInitial, surname });
+          } else {
+            addFinding(findings, 'medium', 'pan.surname_mismatch',
+              `PAN 5th character "${panStruct.surnameInitial}" does not match surname initial "${surnameInitial}" from extracted name "${panExtractedName}".`,
+              { pan: fields.pan, panInitial: panStruct.surnameInitial, nameInitial: surnameInitial, extractedName: panExtractedName });
+          }
+        }
+      }
+
+      // Full structural validity
+      if (panStruct.valid) {
+        addFinding(findings, 'info', 'pan.valid_structure',
+          `PAN ${fields.pan} passes all structural checks (format, holder type: ${panStruct.holderTypeName}, check digit).`,
+          { pan: fields.pan, holderType: panStruct.holderTypeName });
+      }
+    }
+  } else if (document.doc_type === 'pan_card') {
+    addFinding(findings, 'high', 'pan.not_found', 'No PAN number could be extracted from the document. The image may be unclear or the OCR could not read it.');
+  }
+
+  // ── PAN name + DOB cross-checks ──
+  if (document.doc_type === 'pan_card') {
+    if (panExtractedName) {
+      addFinding(findings, 'info', 'pan.name_extracted',
+        `Name extracted from PAN card: "${panExtractedName}"`,
+        { name: panExtractedName });
+
+      // Match against customer name
+      if (customer?.full_name) {
+        const custNorm = normalizePersonName(customer.full_name);
+        const panNorm = normalizePersonName(panExtractedName);
+        const custTokens = custNorm.split(' ').filter(t => t.length > 1);
+        const panTokens = panNorm.split(' ').filter(t => t.length > 1);
+        const matched = custTokens.filter(t => panTokens.includes(t));
+        const ratio = custTokens.length ? matched.length / custTokens.length : 0;
+
+        if (ratio >= 0.6 && matched.length >= 2) {
+          addFinding(findings, 'info', 'pan.name_matches_customer',
+            `PAN card name "${panExtractedName}" matches customer record "${customer.full_name}".`,
+            { panName: panExtractedName, customerName: customer.full_name, matchedTokens: matched, ratio: Number(ratio.toFixed(2)) });
+        } else if (panNorm && custNorm) {
+          addFinding(findings, 'high', 'pan.name_customer_mismatch',
+            `PAN card name "${panExtractedName}" does not match customer record "${customer.full_name}".`,
+            { panName: panExtractedName, customerName: customer.full_name, matchedTokens: matched, ratio: Number(ratio.toFixed(2)) });
+        }
+      }
+    }
+
+    if (panFatherName) {
+      addFinding(findings, 'info', 'pan.father_name_extracted',
+        `Father's name extracted from PAN card: "${panFatherName}"`,
+        { fatherName: panFatherName });
+    }
+
+    if (panDob) {
+      addFinding(findings, 'info', 'pan.dob_extracted',
+        `Date of birth extracted from PAN card: ${panDob}`,
+        { dob: panDob });
+
+      // Cross-check DOB with customer
+      if (customer?.date_of_birth && panDob) {
+        const panDobNorm = normalizeDate(panDob);
+        if (panDobNorm && panDobNorm !== customer.date_of_birth) {
+          addFinding(findings, 'medium', 'pan.dob_customer_mismatch',
+            `PAN card DOB (${panDob}) does not match customer DOB (${customer.date_of_birth}).`,
+            { panDob: panDobNorm, customerDob: customer.date_of_birth });
+        }
+      }
+    }
+  }
   // Aadhaar checksum: skip if QR already confirmed the Aadhaar matches customer
   if (fields.aadhaar && !validateAadhaar(fields.aadhaar) && !qrConfirmed.aadhaarMatch) {
     addFinding(findings, 'high', 'aadhaar.invalid', 'Extracted Aadhaar failed checksum validation.', { aadhaar: fields.aadhaar });
@@ -715,7 +992,7 @@ export function verifyDocument({ document, customer, ocr, metadata, pixelForensi
     score,
     engine: {
       name: 'document-verification-engine',
-      version: '2.2.0',
+      version: '3.0.0',
       ocrEngine: ocr?.engine || 'unknown',
     },
     ocr: {

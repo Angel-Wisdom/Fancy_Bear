@@ -278,11 +278,34 @@ async function buildPdfReport({ report, details, documents, alerts, applicationI
       } else {
         doc.font('Helvetica').fontSize(9);
         for (const finding of findings.slice(0, 30)) {
-          if (y > pageHeight - 100) {
+          // Calculate actual heights BEFORE rendering to avoid overlap.
+          // pdfkit's doc.text() at a fixed y does NOT auto-advance y for
+          // wrapped text, so we must compute heights manually.
+          const codeText = pdfSafe(finding.code || '');
+          const messageText = pdfSafe(finding.message || '');
+          const hasEvidence = finding.evidence;
+          const evidenceStr = hasEvidence ? pdfSafe(safeStringifyEvidence(finding.evidence)) : '';
+
+          // Compute heights for the code + message row (rendered side by side)
+          const codeHeight = doc.heightOfString(codeText, { width: 180 });
+          const messageHeight = doc.heightOfString(messageText, { width: contentWidth - 270 });
+          const rowHeight = Math.max(codeHeight, messageHeight, 14); // min 14 (badge height)
+
+          // Compute evidence height if present
+          let evidenceHeight = 0;
+          if (evidenceStr && evidenceStr !== '{}') {
+            evidenceHeight = doc.heightOfString(`  Evidence: ${evidenceStr}`, { width: contentWidth - 80 });
+          }
+
+          const totalBlockHeight = rowHeight + 4 + evidenceHeight + 4; // row + gap + evidence + gap
+
+          // Page break if this block won't fit
+          if (y + totalBlockHeight > pageHeight - 80) {
             y = newPage();
           }
+
+          // Severity tag (badge)
           const [r, g, b] = severityColor(doc, finding.severity);
-          // Severity tag
           doc
             .roundedRect(50, y, 70, 14, 3)
             .fillColor([r, g, b])
@@ -293,34 +316,31 @@ async function buildPdfReport({ report, details, documents, alerts, applicationI
             .font('Helvetica-Bold')
             .text(String(finding.severity || 'info').toUpperCase(), 50, y + 3, { width: 70, align: 'center' });
 
-          // Code
+          // Code (left column)
           doc
             .fillColor([0x55, 0x55, 0x55])
             .font('Helvetica')
             .fontSize(8)
-            .text(pdfSafe(finding.code || ''), 130, y, { width: 180 });
+            .text(codeText, 130, y, { width: 180 });
 
-          // Message
+          // Message (right column)
           doc
             .fillColor([0x22, 0x22, 0x22])
             .fontSize(9)
-            .text(pdfSafe(finding.message || ''), 320, y, { width: contentWidth - 270 });
+            .text(messageText, 320, y, { width: contentWidth - 270 });
 
-          y += 16;
+          // Advance y by the actual row height (not hardcoded 16)
+          y += rowHeight + 4;
 
-          // Evidence (compact JSON)
-          if (finding.evidence) {
-            const evidenceStr = pdfSafe(safeStringifyEvidence(finding.evidence));
-            if (evidenceStr && evidenceStr !== '{}') {
-              doc
-                .fillColor([0x88, 0x88, 0x88])
-                .fontSize(8)
-                .font('Helvetica-Oblique')
-                .text(`  Evidence: ${evidenceStr}`, 130, y, { width: contentWidth - 80 });
-              y += 14;
-            }
+          // Evidence (indented, on the next line)
+          if (evidenceStr && evidenceStr !== '{}') {
+            doc
+              .fillColor([0x88, 0x88, 0x88])
+              .fontSize(8)
+              .font('Helvetica-Oblique')
+              .text(`  Evidence: ${evidenceStr}`, 130, y, { width: contentWidth - 80 });
+            y += evidenceHeight + 4;
           }
-          y += 4;
         }
       }
 

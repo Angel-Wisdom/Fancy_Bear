@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS verification_results (
                     )),
     tier            TEXT,               -- NEW, nullable: tier1_checksum | tier2_format_only | tier3_no_validator
     overall_score   REAL,
+    qr_data         TEXT,               -- NEW, nullable: JSON blob of Aadhaar QR scan results (null for non-Aadhaar docs)
     details_json    TEXT NOT NULL,
     engine_version  TEXT DEFAULT '2.0.0',
     run_by          TEXT NOT NULL,

@@ -22,6 +22,15 @@ export function getDb() {
   const schemaSql = readFileSync(SCHEMA_PATH, 'utf-8');
   db.exec(schemaSql); // idempotent — every statement is CREATE TABLE/INDEX IF NOT EXISTS
 
+  // ── Runtime migrations (safe ALTERs for existing databases) ──
+  const tableInfo = db.prepare('PRAGMA table_info(verification_results)').all();
+  const hasQrData = tableInfo.some((col) => col.name === 'qr_data');
+  if (!hasQrData) {
+    db.exec("ALTER TABLE verification_results ADD COLUMN qr_data TEXT;");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_verification_qr_data ON verification_results(qr_data) WHERE qr_data IS NOT NULL;");
+    console.log('[db] Migration: added qr_data column to verification_results');
+  }
+
   // Polyfill better-sqlite3's db.transaction(fn) API, which node:sqlite's DatabaseSync
   // doesn't have natively. This means seed.js's existing `db.transaction((rows) => {...})`
   // calls keep working completely unmodified — no changes needed there.

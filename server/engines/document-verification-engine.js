@@ -1,5 +1,6 @@
 import { detectTamperSignals } from './forensics-engine.js';
 import { validateAadhaar, validatePan, hashAadhaar } from './kyc-engine.js';
+import { extractNameFromAadhaarOcr, crossCheckQrData } from './aadhaar-engine.js';
 
 const DOC_REQUIREMENTS = {
   pan_card: {
@@ -56,7 +57,7 @@ function extractFields(text) {
   const dateMatches = [...normalized.matchAll(/\b(?:\d{2}[/-]\d{2}[/-]\d{4}|\d{4}-\d{2}-\d{2})\b/g)].map((match) => match[0]);
   const amountMatches = [...normalized.matchAll(/(?:INR|RS\.?|₹)?\s?([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)\b/g)]
     .map((match) => Number(String(match[1]).replace(/,/g, '')))
-    .filter((value) => Number.isFinite(value) && value > 0);
+    .filter((value) => Number.isFinite(value) && value >= 100);
   const surveyNumber = normalized.match(/\b(?:SURVEY|SY|S\.NO|SURVEY NO)\.?\s*[:#-]?\s*([0-9]+(?:\/[0-9A-Z-]+)?)\b/)?.[1] || null;
 
   return {
@@ -78,13 +79,13 @@ function amountStats(amounts) {
   return { repeatedValues, highRoundNumberShare: roundNumbers / amounts.length };
 }
 
-function compareCustomer(fields, customer) {
+function compareCustomer(fields, customer, qrConfirmed = {}) {
   const mismatches = [];
   if (fields.pan && customer?.pan_number && fields.pan !== String(customer.pan_number).toUpperCase()) {
     mismatches.push({ field: 'pan', expected: customer.pan_number, actual: fields.pan });
   }
-  // CHANGED: customer.aadhaar_number no longer exists (masked storage — see schema.sql v2 / REBUILD_GUIDE.md).
-  if (fields.aadhaar && customer?.aadhaar_hash && validateAadhaar(fields.aadhaar) && hashAadhaar(fields.aadhaar) !== customer.aadhaar_hash) {
+  // Aadhaar hash comparison — skip if QR already confirmed the match
+  if (fields.aadhaar && customer?.aadhaar_hash && validateAadhaar(fields.aadhaar) && hashAadhaar(fields.aadhaar) !== customer.aadhaar_hash && !qrConfirmed.aadhaarMatch) {
     mismatches.push({ field: 'aadhaar', expected: `hash:${customer.aadhaar_hash.slice(0, 8)}…`, actual: fields.aadhaar });
   }
   return mismatches;
@@ -137,14 +138,9 @@ function compareApplicantName(text, customer) {
 
 function scoreFindings(findings) {
   const penalty = findings.reduce((sum, finding) => {
-    // C2PA content-credentials presence is a structured, purpose-built
-    // provenance record embedded by the generating/editing tool itself --
-    // unlike the other pixel-forensics checks (which are statistical
-    // heuristics with some false-positive risk), a hit here is
-    // near-definitive proof of AI-generation or edit history. Weight it
-    // above a standard "critical" finding so it reliably pushes a document
-    // into fail on its own, without needing every other critical finding
-    // in the system to also become this severe.
+    // 'info' severity is a positive/neutral signal (e.g. QR verified, dual-source
+    // name confirmation) — zero penalty.
+    if (finding.severity === 'info') return sum;
     if (finding.code === 'pixel.content_credentials_detected') return sum + 48;
     if (finding.severity === 'critical') return sum + 35;
     if (finding.severity === 'high') return sum + 24;
@@ -371,7 +367,97 @@ function analyzeItr(text) {
   return { findings, forceFail };
 }
 
-export function verifyDocument({ document, customer, ocr, metadata, pixelForensics }) {
+/**
+ * QR-guided name extraction: given the QR-decoded name, try to find
+ * matching tokens in the OCR text. This handles garbled OCR output
+ * where the heuristic extractor fails completely.
+ *
+ * Strategy: take the QR name tokens, look for them (or fuzzy matches)
+ * in the OCR text lines. Reconstruct the best-matching name from OCR.
+ *
+ * Returns the matched name string, or null.
+ */
+function findNameByQrGuidance(ocrText, qrName) {
+  if (!ocrText || !qrName) return null;
+
+  const qrTokens = qrName
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length >= 2);
+
+  if (!qrTokens.length) return null;
+
+  const lines = ocrText.split('\n').map(l => l.trim()).filter(Boolean);
+
+  // For each line, check how many QR name tokens appear in it
+  let bestLine = null;
+  let bestMatchCount = 0;
+
+  for (const line of lines) {
+    const lineLower = line.toLowerCase();
+    let matchCount = 0;
+    for (const token of qrTokens) {
+      if (lineLower.includes(token)) matchCount++;
+    }
+    if (matchCount > bestMatchCount) {
+      bestMatchCount = matchCount;
+      bestLine = line;
+    }
+  }
+
+  if (!bestLine || bestMatchCount < Math.ceil(qrTokens.length * 0.5)) {
+    return null;
+  }
+
+  // Try to extract the name portion from the best line
+  // Look for title-case word sequences that overlap with QR tokens
+  const wordRe = /\b[A-Z][a-z]{1,}\b/g;
+  const words = [];
+  let m;
+  while ((m = wordRe.exec(bestLine)) !== null) {
+    words.push(m[0]);
+  }
+
+  if (!words.length) return null;
+
+  // Filter to words that match or are substrings of QR tokens
+  const matchedWords = words.filter(w => {
+    const wl = w.toLowerCase();
+    return qrTokens.some(qt => wl === qt || qt.includes(wl) || wl.includes(qt));
+  });
+
+  if (matchedWords.length >= Math.ceil(qrTokens.length * 0.5)) {
+    // Reconstruct name in QR token order
+    const ordered = [];
+    for (const qt of qrTokens) {
+      const found = matchedWords.find(w => {
+        const wl = w.toLowerCase();
+        return wl === qt || qt.includes(wl) || wl.includes(qt);
+      });
+      if (found && !ordered.includes(found)) ordered.push(found);
+    }
+    if (ordered.length) return ordered.join(' ');
+  }
+
+  // Fallback: return the best matching words from the line
+  if (matchedWords.length) return matchedWords.join(' ');
+  return null;
+}
+
+/**
+ * Check if two names share enough tokens to be considered the same person.
+ * More lenient than full string match — handles OCR variations.
+ */
+function nameTokensOverlap(nameA, nameB) {
+  const normA = nameA.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(t => t.length > 1);
+  const normB = nameB.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(t => t.length > 1);
+  if (!normA.length || !normB.length) return false;
+  const matched = normA.filter(t => normB.includes(t) || normB.some(b => b.includes(t) || t.includes(b)));
+  return matched.length >= Math.ceil(Math.min(normA.length, normB.length) * 0.6);
+}
+
+export function verifyDocument({ document, customer, ocr, metadata, pixelForensics, qrScan }) {
   const text = compactText(ocr?.text);
   const lowerText = text.toLowerCase();
   const fields = extractFields(text);
@@ -381,6 +467,98 @@ export function verifyDocument({ document, customer, ocr, metadata, pixelForensi
   const metadataSignals = metadata?.suspicious || [];
   const syntheticSignals = detectSyntheticImageSignals(document, metadata, ocr, text);
   let forceFail = false;
+
+  // ── Aadhaar-specific: extract name from OCR ──
+  // Two-pass strategy:
+  //  Pass 1: Try standard heuristic extraction from OCR text.
+  //  Pass 2: If QR decoded successfully, try QR-guided matching — find the
+  //          QR name (or its tokens) within the OCR text, which is far more
+  //          reliable than blind heuristic extraction when OCR is garbled.
+  let ocrExtractedName = null;
+  let ocrNameSource = null; // 'heuristic' | 'qr_guided'
+  if (document.doc_type === 'aadhaar_card') {
+    // Pass 1: heuristic extraction
+    const nameResult = extractNameFromAadhaarOcr(text);
+    if (nameResult) {
+      ocrExtractedName = nameResult.name;
+      ocrNameSource = 'heuristic';
+    }
+  }
+
+  // ── QR cross-checks (Aadhaar only) ──
+  let qrCrossCheck = null;
+  let qrConfirmed = { aadhaarMatch: false, nameMatch: false, dobMatch: false };
+  const hasNameOcrMismatch = (code) => findings.some(f => f.code === code);
+
+  if (qrScan && qrScan.scanned) {
+    // ── QR-guided name extraction (Pass 2) ──
+    // If QR has a name and we haven't found a good OCR name yet,
+    // try to find QR name tokens in the OCR text. This handles short
+    // names like "Om" that the 3+ char heuristic would miss.
+    if (document.doc_type === 'aadhaar_card') {
+      const qrName = qrScan.data?.name || qrScan.data?.Name || '';
+      if (qrName && !ocrExtractedName) {
+        const guided = findNameByQrGuidance(text, qrName);
+        if (guided) {
+          ocrExtractedName = guided;
+          ocrNameSource = 'qr_guided';
+        }
+      }
+      // Even if heuristic found a name, if QR is available, verify the
+      // heuristic name actually matches QR. If not, try QR-guided.
+      if (qrName && ocrExtractedName && ocrNameSource === 'heuristic') {
+        const similar = nameTokensOverlap(ocrExtractedName, qrName);
+        if (!similar) {
+          // Heuristic found garbage (e.g. "Te Ry"), discard and try QR-guided
+          const guided = findNameByQrGuidance(text, qrName);
+          if (guided) {
+            ocrExtractedName = guided;
+            ocrNameSource = 'qr_guided';
+          } else {
+            // QR-guided also failed — use QR name directly as the best source
+            ocrExtractedName = qrName;
+            ocrNameSource = 'qr_only';
+          }
+        }
+      }
+      // If no OCR name at all and QR available, use QR name
+      if (!ocrExtractedName && qrName) {
+        ocrExtractedName = qrName;
+        ocrNameSource = 'qr_only';
+      }
+    }
+
+    fields.name = ocrExtractedName;
+
+    qrCrossCheck = crossCheckQrData(qrScan, customer, fields, ocrExtractedName);
+    findings.push(...qrCrossCheck.findings);
+
+    // Build confirmation flags — when QR verifies a field, skip the
+    // corresponding OCR-based check (QR is ground truth, OCR is noisy).
+    const checks = qrCrossCheck.matchSummary?.checks || {};
+    qrConfirmed = {
+      aadhaarMatch: checks.aadhaarVsCustomer === 'match',
+      nameMatch: checks.nameVsCustomer === 'match',
+      dobMatch: checks.dobVsCustomer === 'match',
+    };
+
+    // Positive finding: QR verified successfully
+    if (qrCrossCheck.matchSummary?.overall === 'match') {
+      findings.push({
+        severity: 'info',
+        code: 'aadhaar.qr_verified',
+        message: 'Aadhaar QR code scanned and decoded successfully. All QR data cross-checks against customer record passed.',
+        evidence: { checks: qrCrossCheck.matchSummary.checks },
+      });
+    }
+  } else if (qrScan && !qrScan.scanned && document.doc_type === 'aadhaar_card') {
+    // QR scan was attempted but failed — informational, no penalty
+    findings.push({
+      severity: 'low',
+      code: 'aadhaar.qr_not_scannable',
+      message: 'Aadhaar QR code could not be scanned: ' + (qrScan.reason || 'unknown reason') + '. Verification relied on OCR only.',
+    });
+  }
 
   if (!text) addFinding(findings, 'high', 'ocr.empty', 'No readable text could be extracted from the document.');
   if ((ocr?.confidence || 0) < 45) addFinding(findings, 'medium', 'ocr.low_confidence', 'OCR confidence is below the verification threshold.', { confidence: ocr?.confidence || 0 });
@@ -419,7 +597,10 @@ export function verifyDocument({ document, customer, ocr, metadata, pixelForensi
   }
 
   if (fields.pan && !validatePan(fields.pan)) addFinding(findings, 'high', 'pan.invalid', 'Extracted PAN has an invalid format.', { pan: fields.pan });
-  if (fields.aadhaar && !validateAadhaar(fields.aadhaar)) addFinding(findings, 'high', 'aadhaar.invalid', 'Extracted Aadhaar failed checksum validation.', { aadhaar: fields.aadhaar });
+  // Aadhaar checksum: skip if QR already confirmed the Aadhaar matches customer
+  if (fields.aadhaar && !validateAadhaar(fields.aadhaar) && !qrConfirmed.aadhaarMatch) {
+    addFinding(findings, 'high', 'aadhaar.invalid', 'Extracted Aadhaar failed checksum validation.', { aadhaar: fields.aadhaar });
+  }
 
   if (document.doc_type === 'salary_slip') {
     const salaryAnalysis = analyzeSalarySlip(text);
@@ -433,13 +614,15 @@ export function verifyDocument({ document, customer, ocr, metadata, pixelForensi
     forceFail = forceFail || itrAnalysis.forceFail;
   }
 
-  const customerMismatches = compareCustomer(fields, customer);
+  // Customer field comparison — skip Aadhaar hash check if QR already confirmed it
+  const customerMismatches = compareCustomer(fields, customer, qrConfirmed);
   for (const mismatch of customerMismatches) {
     addFinding(findings, 'high', 'kyc.customer_mismatch', `Extracted ${mismatch.field} does not match the selected customer.`, mismatch);
   }
 
+  // Name comparison — skip if QR already confirmed name matches customer
   const nameCheck = compareApplicantName(text, customer);
-  if (nameCheck && !nameCheck.matched) {
+  if (nameCheck && !nameCheck.matched && !qrConfirmed.nameMatch) {
     addFinding(
       findings,
       text ? 'high' : 'medium',
@@ -447,12 +630,25 @@ export function verifyDocument({ document, customer, ocr, metadata, pixelForensi
       nameCheck.reason,
       nameCheck.evidence,
     );
+  } else if (
+    nameCheck && nameCheck.matched && qrConfirmed.nameMatch && ocrExtractedName &&
+    !hasNameOcrMismatch('aadhaar.qr_name_ocr_mismatch') &&
+    ocrNameSource !== 'qr_only' &&
+    (qrCrossCheck?.matchSummary?.checks?.nameVsOcr === 'match' || ocrNameSource === 'qr_guided')
+  ) {
+    // Both OCR and QR confirm the name AND they agree with each other.
+    // Only fire when all three sources (OCR, QR, customer) are in agreement
+    // AND there's no OCR-vs-QR name mismatch finding.
+    findings.push({
+      severity: 'info',
+      code: 'aadhaar.name_confirmed_dual_source',
+      message: `Applicant name "${ocrExtractedName}" confirmed by both OCR extraction and QR code scan.`,
+      evidence: { ocrName: ocrExtractedName, qrName: qrScan?.data?.name || qrScan?.data?.Name, source: ocrNameSource },
+    });
   }
 
-  // DOB cross-check: if the customer has a DOB on file and we extracted
-  // any date matching that DOB shape, ensure it's present. If a different
-  // DOB appears on the document, that's a strong fraud signal.
-  if (customer?.date_of_birth && fields.dates.length) {
+  // DOB cross-check: skip if QR already confirmed DOB matches customer
+  if (customer?.date_of_birth && fields.dates.length && !qrConfirmed.dobMatch) {
     const customerDob = String(customer.date_of_birth); // YYYY-MM-DD
     // Accept either ISO (YYYY-MM-DD) or DD-MM-YYYY / DD/MM/YYYY forms.
     const dobMatch = fields.dates.find((d) => {
@@ -491,15 +687,27 @@ export function verifyDocument({ document, customer, ocr, metadata, pixelForensi
     }
   }
 
-  const amounts = amountStats(fields.amounts);
-  if (amounts.repeatedValues.length) {
-    addFinding(findings, 'medium', 'amount.repeated_values', 'Repeated amount values appear unusually often in the document.', amounts.repeatedValues.slice(0, 5));
-  }
-  if (amounts.highRoundNumberShare > 0.6 && fields.amounts.length >= 8) {
-    addFinding(findings, 'medium', 'amount.rounding_bias', 'Most extracted amounts are round thousands, which can indicate fabricated statements.', { share: amounts.highRoundNumberShare });
+  // Amount analysis — only relevant for financial documents
+  const FINANCIAL_DOC_TYPES = new Set(['bank_statement', 'salary_slip', 'itr', 'sale_deed']);
+  if (FINANCIAL_DOC_TYPES.has(document.doc_type)) {
+    const amounts = amountStats(fields.amounts);
+    if (amounts.repeatedValues.length) {
+      addFinding(findings, 'medium', 'amount.repeated_values', 'Repeated amount values appear unusually often in the document.', amounts.repeatedValues.slice(0, 5));
+    }
+    if (amounts.highRoundNumberShare > 0.6 && fields.amounts.length >= 8) {
+      addFinding(findings, 'medium', 'amount.rounding_bias', 'Most extracted amounts are round thousands, which can indicate fabricated statements.', { share: amounts.highRoundNumberShare });
+    }
   }
 
-  const score = scoreFindings(findings);
+  let score = scoreFindings(findings);
+
+  // QR verification bonus: if QR scanned and all cross-checks passed,
+  // the Aadhaar data is cryptographically verified by UIDAI — the most
+  // reliable verification source. Add a small score boost.
+  if (qrScan?.scanned && qrCrossCheck?.matchSummary?.overall === 'match') {
+    score = Math.min(100, score + 5);
+  }
+
   const status = forceFail ? 'fail' : score >= 75 ? 'pass' : score >= 55 ? 'warning' : 'fail';
 
   return {
@@ -507,7 +715,7 @@ export function verifyDocument({ document, customer, ocr, metadata, pixelForensi
     score,
     engine: {
       name: 'document-verification-engine',
-      version: '2.1.0',
+      version: '2.2.0',
       ocrEngine: ocr?.engine || 'unknown',
     },
     ocr: {
@@ -530,5 +738,8 @@ export function verifyDocument({ document, customer, ocr, metadata, pixelForensi
       globalNoiseFloor: pixelForensics.globalNoiseFloor || null,
       contentCredentials: pixelForensics.contentCredentials || null,
     } : { applicable: false },
+    // Aadhaar QR scan results (null for non-Aadhaar docs)
+    qrScan: qrScan || null,
+    qrMatchSummary: qrCrossCheck?.matchSummary || null,
   };
 }

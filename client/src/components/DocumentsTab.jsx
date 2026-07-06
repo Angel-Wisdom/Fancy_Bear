@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { CloudUpload, RefreshCw, ShieldAlert, FileText, Camera, RotateCcw } from 'lucide-react';
+import { CloudUpload, RefreshCw, ShieldAlert, FileText, Camera, RotateCcw, ScanLine, CheckCircle2, XCircle, MinusCircle, Info } from 'lucide-react';
 import { api } from '../utils/api';
 import RiskGauge from './RiskGauge';
 import MetadataPanel from './MetadataPanel';
@@ -13,7 +13,7 @@ function parseJson(value, fallback = null) {
   }
 }
 
-const documentTabs = ['ocr', 'findings', 'fields', 'metadata', 'report'];
+const BASE_TABS = ['ocr', 'findings', 'fields', 'metadata', 'report'];
 
 export default function DocumentsTab({ customerId }) {
   const [documents, setDocuments] = useState([]);
@@ -143,6 +143,21 @@ export default function DocumentsTab({ customerId }) {
   const ocrText = selectedDocument?.ocr_text || 'Select a document to see extracted OCR text.';
   const score = details?.score || selectedDocument?.verification?.overall_score || 0;
   const label = selectedDocument?.verification?.status || selectedDocument?.status || 'pending';
+  // QR data: prefer dedicated column (verification.qr_data), fallback to details_json
+  const qrData = selectedDocument?.verification?.qr_data || details?.qrScan || null;
+  const hasQrData = !!(qrData);
+  const matchSummary = details?.qrMatchSummary || null;
+  const documentTabs = useMemo(() => {
+    if (hasQrData) return [...BASE_TABS.slice(0, 4), 'qr', ...BASE_TABS.slice(4)];
+    return BASE_TABS;
+  }, [hasQrData]);
+
+  // Auto-switch to QR tab when an Aadhaar card with QR data is selected
+  useEffect(() => {
+    if (hasQrData && !BASE_TABS.includes(activeDocViewTab)) {
+      setActiveDocViewTab('ocr');
+    }
+  }, [hasQrData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleUpload(event) {
     event.preventDefault();
@@ -353,16 +368,23 @@ export default function DocumentsTab({ customerId }) {
               {activeDocViewTab === 'ocr' && <pre className="document-pre">{ocrText}</pre>}
               {activeDocViewTab === 'findings' && (
                 <div className="flex-col gap-3">
-                  {details?.findings?.length ? details.findings.map((f) => (
-                    <div key={`${f.code}-${f.message}`} className="p-4 border border-danger-border bg-danger-bg rounded-md">
-                      <strong className="text-sm text-danger block mb-2">{f.severity?.toUpperCase()} | {f.code}</strong>
-                      <p className="text-sm text-primary">{f.message}</p>
-                    </div>
-                  )) : <p className="text-sm text-secondary">No anomaly findings recorded.</p>}
+                  {details?.findings?.length ? details.findings.map((f) => {
+                    const isInfo = f.severity === 'info';
+                    const isLow = f.severity === 'low';
+                    return (
+                      <div key={`${f.code}-${f.message}`} className={`p-4 border rounded-md ${isInfo ? 'border-accent-border bg-accent-bg' : isLow ? 'border-default bg-muted' : 'border-danger-border bg-danger-bg'}`}>
+                        <strong className={`text-sm block mb-2 ${isInfo ? 'text-accent' : isLow ? 'text-secondary' : 'text-danger'}`}>{f.severity?.toUpperCase()} | {f.code}</strong>
+                        <p className="text-sm text-primary">{f.message}</p>
+                      </div>
+                    );
+                  }) : <p className="text-sm text-secondary">No anomaly findings recorded.</p>}
                 </div>
               )}
               {activeDocViewTab === 'fields' && <pre className="document-pre">{JSON.stringify(details?.extractedFields || {}, null, 2)}</pre>}
               {activeDocViewTab === 'metadata' && <MetadataPanel metadata={metadata} />}
+              {activeDocViewTab === 'qr' && (
+                <QrDataPanel qrScan={qrData} matchSummary={matchSummary} />
+              )}
               {activeDocViewTab === 'report' && <pre className="document-pre">{JSON.stringify(details || selectedDocument?.verification || {}, null, 2)}</pre>}
             </div>
           </div>
@@ -371,6 +393,110 @@ export default function DocumentsTab({ customerId }) {
         )}
 
       </div>
+    </div>
+  );
+}
+
+// ── QR Data Panel ────────────────────────────────────────────
+
+function maskAadhaar(value) {
+  if (!value) return 'N/A';
+  const digits = String(value).replace(/\s+/g, '');
+  return digits.length >= 4 ? '**** **** ' + digits.slice(-4) : '****';
+}
+
+function CheckIcon({ status }) {
+  if (status === 'match') return <CheckCircle2 size={16} className="text-green-500 shrink-0" />;
+  if (status === 'mismatch' || status === 'critical_mismatch') return <XCircle size={16} className="text-red-500 shrink-0" />;
+  if (status === 'invalid_format' || status === 'unparseable') return <MinusCircle size={16} className="text-yellow-500 shrink-0" />;
+  return <Info size={16} className="text-tertiary shrink-0" />;
+}
+
+function QrDataPanel({ qrScan, matchSummary }) {
+  if (!qrScan) return <p className="text-sm text-secondary p-4">No QR scan data available.</p>;
+
+  const scanned = qrScan.scanned;
+  const data = qrScan.data || {};
+
+  return (
+    <div className="flex-col gap-4 p-4 overflow-y-auto" style={{ maxHeight: '440px' }}>
+      {/* Status banner */}
+      <div className={`flex items-center gap-3 p-4 rounded-md border ${scanned ? (matchSummary?.overall === 'match' ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5') : 'border-default bg-muted'}`}>
+        <ScanLine size={20} className={scanned ? (matchSummary?.overall === 'match' ? 'text-green-500' : 'text-red-500') : 'text-tertiary'} />
+        <div className="flex-col">
+          <strong className="text-sm">
+            {scanned ? (matchSummary?.overall === 'match' ? 'QR Verified — All checks passed' : 'QR Scanned — Mismatches detected') : 'QR Not Scannable'}
+          </strong>
+          {!scanned && <span className="text-xs text-secondary">{qrScan.reason}</span>}
+        </div>
+      </div>
+
+      {scanned && (
+        <>
+          {/* Photo + decoded data side by side */}
+          <div className="grid gap-4" style={{ gridTemplateColumns: 'auto 1fr' }}>
+            {/* QR Photo */}
+            {qrScan.photo && (
+              <div className="flex-col items-center gap-2">
+                <img
+                  src={`data:image/jpeg;base64,${qrScan.photo}`}
+                  alt="QR-extracted photo"
+                  className="rounded-md border border-default"
+                  style={{ width: 100, height: 125, objectFit: 'cover' }}
+                />
+                <span className="text-xs text-secondary">QR Photo</span>
+              </div>
+            )}
+
+            {/* Decoded fields */}
+            <div className="flex-col gap-2">
+              <h4 className="text-xs font-bold uppercase tracking-wide text-secondary">QR-Decoded Details</h4>
+              <QrField label="Name" value={data.name || data.Name} />
+              <QrField label="Aadhaar No." value={maskAadhaar(data.uid || data.aadhaar_number)} />
+              <QrField label="DOB" value={data.dob || data.date_of_birth || data.DOB} />
+              <QrField label="Gender" value={data.gender || data.Gender} />
+              <QrField label="Care Of" value={data.care_of || data.co || data.CareOf} />
+              <QrField label="Address" value={data.address || data.Address} />
+            </div>
+          </div>
+
+          {/* Cross-check results */}
+          {matchSummary && (
+            <div className="flex-col gap-2 mt-2">
+              <h4 className="text-xs font-bold uppercase tracking-wide text-secondary">Cross-Check Results</h4>
+              <div className="grid gap-1">
+                <CheckRow label="Name vs Customer" status={matchSummary.checks?.nameVsCustomer} />
+                <CheckRow label="Aadhaar vs Customer" status={matchSummary.checks?.aadhaarVsCustomer} />
+                <CheckRow label="Name vs OCR" status={matchSummary.checks?.nameVsOcr} />
+                <CheckRow label="Aadhaar vs OCR" status={matchSummary.checks?.aadhaarVsOcr} />
+                <CheckRow label="DOB vs Customer" status={matchSummary.checks?.dobVsCustomer} />
+                <CheckRow label="Gender vs Customer" status={matchSummary.checks?.genderVsCustomer} />
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function QrField({ label, value }) {
+  if (!value) return null;
+  return (
+    <div className="flex gap-3 text-sm">
+      <span className="text-secondary shrink-0" style={{ minWidth: 90 }}>{label}:</span>
+      <span className="text-primary font-medium">{value}</span>
+    </div>
+  );
+}
+
+function CheckRow({ label, status }) {
+  if (!status) return null;
+  return (
+    <div className="flex items-center gap-2 text-sm py-1 px-2 rounded" style={{ background: 'var(--surface-base, #0f172a)' }}>
+      <CheckIcon status={status} />
+      <span className="text-primary">{label}</span>
+      <span className="ml-auto text-xs font-mono uppercase">{status}</span>
     </div>
   );
 }

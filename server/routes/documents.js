@@ -7,6 +7,7 @@ import { sha256 } from '../engines/crypto-engine.js';
 import { extractTextFromBuffer } from '../engines/ocr-engine.js';
 import { inspectMetadata, analyzePixelForensics } from '../engines/forensics-engine.js';
 import { verifyDocument } from '../engines/document-verification-engine.js';
+import { scanAadhaarQr, cleanAadhaarOcrText } from '../engines/aadhaar-engine.js';
 import { signReport } from '../engines/crypto-engine.js';
 import { writeAuditEntry } from '../utils/audit.js';
 import { getDocTypeMeta } from '../engines/doc-types.js';
@@ -41,10 +42,14 @@ router.get('/', (req, res) => {
     LIMIT 1
   `);
 
-  const documents = docs.map((document) => ({
-    ...document,
-    verification: getVerification.get(document.id) || null,
-  }));
+  const documents = docs.map((document) => {
+    const ver = getVerification.get(document.id) || null;
+    if (ver?.qr_data) {
+      try { ver.qr_data = JSON.parse(ver.qr_data); }
+      catch { /* leave as string */ }
+    }
+    return { ...document, verification: ver };
+  });
   
   res.json({ documents });
 });
@@ -61,6 +66,12 @@ router.get('/:id', (req, res) => {
     ORDER BY created_at DESC 
     LIMIT 1
   `).get(document.id) || null;
+  
+  // Parse qr_data JSON so the frontend receives a structured object
+  if (verification?.qr_data) {
+    try { verification.qr_data = JSON.parse(verification.qr_data); }
+    catch { /* leave as string */ }
+  }
   
   res.json({ document: { ...document, verification } });
 });
@@ -137,9 +148,12 @@ function storeVerification({ document, result, userId, runDurationMs }) {
   const docMeta = getDocTypeMeta(document.doc_type);
   const tier = docMeta?.tier || null;
 
+  // Serialize QR scan data for dedicated column (independent of details_json)
+  const qrDataJson = result.qrScan ? JSON.stringify(result.qrScan) : null;
+
   db.prepare(`
-    INSERT INTO verification_results (id, document_id, customer_id, verification_type, status, overall_score, details_json, run_by, run_duration_ms, created_at, tier)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO verification_results (id, document_id, customer_id, verification_type, status, overall_score, qr_data, details_json, run_by, run_duration_ms, created_at, tier)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     document.id,
@@ -147,6 +161,7 @@ function storeVerification({ document, result, userId, runDurationMs }) {
     'forensic',
     result.status,
     result.score,
+    qrDataJson,
     JSON.stringify({ ...details, signature: signReport(details) }),
     userId,
     runDurationMs,
@@ -203,9 +218,30 @@ router.post('/upload', upload.array('files'), async (req, res) => {
     const startedAt = Date.now();
     const createdAt = new Date().toISOString();
     const hash = sha256(file.buffer);
-    const extracted = await extractTextFromBuffer(file.buffer, file.originalname, file.mimetype);
+
+    // ── Run OCR + pixel forensics + Aadhaar QR scan in parallel ──
+    const isAadhaarCard = docType === 'aadhaar_card';
+    const [extracted, pixelForensics, qrScan] = await Promise.all([
+      extractTextFromBuffer(file.buffer, file.originalname, file.mimetype),
+      analyzePixelForensics(file.buffer, file.mimetype),
+      isAadhaarCard
+        ? scanAadhaarQr(file.buffer, file.mimetype)
+        : Promise.resolve(null),
+    ]);
+
+    // ── For Aadhaar cards: clean OCR text (remove Hindi garble) ──
     const metadata = inspectMetadata(file.buffer);
-    const pixelForensics = await analyzePixelForensics(file.buffer, file.mimetype);
+    let ocrTextToStore = extracted.text;
+    let ocrTextForVerification = extracted.text;
+
+    if (isAadhaarCard && extracted.engine === 'tesseract.js') {
+      const cleaned = cleanAadhaarOcrText(extracted.text);
+      ocrTextToStore = cleaned.text;
+      // Also pass cleaned text to verification engine so it works with
+      // garbage-free text for field extraction and name detection.
+      ocrTextForVerification = cleaned.text;
+    }
+
     const id = randomUUID();
 
     const base64Data = file.buffer.toString('base64');
@@ -225,7 +261,8 @@ router.post('/upload', upload.array('files'), async (req, res) => {
       created_at: createdAt,
     };
     
-    const verification = verifyDocument({ document, customer, ocr: extracted, metadata, pixelForensics });
+    const ocrForVerification = { ...extracted, text: ocrTextForVerification };
+    const verification = verifyDocument({ document, customer, ocr: ocrForVerification, metadata, pixelForensics, qrScan });
     const status = verification.status === 'pass' ? 'verified' : verification.status === 'warning' ? 'flagged' : 'rejected';
 
     db.prepare(`
@@ -242,7 +279,7 @@ router.post('/upload', upload.array('files'), async (req, res) => {
       file.size,
       hash,
       hash,
-      extracted.text,
+      ocrTextToStore,
       extracted.confidence,
       JSON.stringify(serializeMetadata(metadata.metadata || {})),
       status,

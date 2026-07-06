@@ -377,18 +377,17 @@ def analyze(image_bytes):
             "evidence": {"tableCount": quant["tableCount"]},
         })
     if global_noise["flagged"]:
-        findings.append({
-            "severity": "medium",
-            "code": "pixel.no_sensor_noise",
-            "message": (
-                f"No natural sensor/scanner noise floor was detected anywhere in the image "
-                f"(noise floor {global_noise['noiseFloor']}, expected camera/scan grain > {0.15}). "
-                "This is consistent with a fully AI-generated image or content drawn/filled entirely "
-                "in an editor rather than photographed or scanned -- though a very clean scan of a "
-                "plain printed page can also read this way, so treat this as corroborating, not conclusive."
-            ),
-            "evidence": global_noise,
-        })
+        # NOTE: intentionally NOT added to `findings` (and therefore not
+        # scored / not counted toward pass-fail). In testing against
+        # real-world uploads, ordinary photos that had simply been resized
+        # or recompressed by an intermediary (WhatsApp, a browser upload
+        # pipeline, a phone gallery's "save for sharing" step) frequently
+        # lose their sensor-grain floor too -- smooth interpolation during
+        # resize does that on its own, with no editing or AI generation
+        # involved. That makes this check too unreliable to auto-penalize
+        # on; it's surfaced in `globalNoiseFloor` for a human reviewer to
+        # weigh alongside everything else, not as a scored finding.
+        pass
     if content_credentials["found"]:
         findings.append({
             "severity": "critical",

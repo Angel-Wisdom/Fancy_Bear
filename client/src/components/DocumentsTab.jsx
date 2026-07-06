@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { CloudUpload, RefreshCw, ShieldAlert, FileText } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { CloudUpload, RefreshCw, ShieldAlert, FileText, Camera, RotateCcw } from 'lucide-react';
 import { api } from '../utils/api';
 import RiskGauge from './RiskGauge';
 import MetadataPanel from './MetadataPanel';
@@ -23,6 +23,98 @@ export default function DocumentsTab({ customerId }) {
   const [files, setFiles] = useState([]);
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
+
+  // --- Live capture state -------------------------------------------------
+  const [inputMode, setInputMode] = useState('file'); // 'file' | 'camera'
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [capturedPreviewUrl, setCapturedPreviewUrl] = useState(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+
+  function stopCameraStream() {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setCameraActive(false);
+  }
+
+  async function startCameraStream() {
+    setCameraError('');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError('Camera capture is not supported in this browser.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setCameraActive(true);
+    } catch (err) {
+      setCameraError(
+        err?.name === 'NotAllowedError'
+          ? 'Camera permission was denied. Allow camera access in your browser to capture a document.'
+          : 'Could not access a camera on this device.',
+      );
+    }
+  }
+
+  function capturePhoto() {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !video.videoWidth) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const capturedFile = new File([blob], `document-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      setFiles([capturedFile]);
+      setCapturedPreviewUrl(URL.createObjectURL(blob));
+      stopCameraStream();
+    }, 'image/jpeg', 0.92);
+  }
+
+  function retakePhoto() {
+    if (capturedPreviewUrl) URL.revokeObjectURL(capturedPreviewUrl);
+    setCapturedPreviewUrl(null);
+    setFiles([]);
+  }
+
+  function switchInputMode(mode) {
+    if (mode === inputMode) return;
+    stopCameraStream();
+    if (capturedPreviewUrl) URL.revokeObjectURL(capturedPreviewUrl);
+    setCapturedPreviewUrl(null);
+    setFiles([]);
+    setCameraError('');
+    setInputMode(mode);
+  }
+
+  useEffect(() => {
+    // Start the camera whenever we're in camera mode with no photo captured
+    // yet -- covers both the initial mode switch and a "Retake" action.
+    if (inputMode === 'camera' && !capturedPreviewUrl && !cameraActive) {
+      startCameraStream();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputMode, capturedPreviewUrl]);
+
+  useEffect(() => {
+    // Stop the camera if the component unmounts while a stream is open.
+    return () => stopCameraStream();
+  }, []);
+  // -------------------------------------------------------------------------
 
   async function loadDocuments(preferredId = selectedDocumentId) {
     try {
@@ -67,6 +159,8 @@ export default function DocumentsTab({ customerId }) {
       const firstUploaded = result.documents?.[0] || result.document;
       await loadDocuments(firstUploaded?.id);
       setFiles([]);
+      if (capturedPreviewUrl) URL.revokeObjectURL(capturedPreviewUrl);
+      setCapturedPreviewUrl(null);
     } catch (error) {
       console.error("Upload failure:", error);
     } finally {
@@ -97,13 +191,67 @@ export default function DocumentsTab({ customerId }) {
               <option value="sale_deed">Sale Deed</option>
               <option value="other">Other</option>
             </select>
-            
-            {/* Styled File Input to hide ugly default browser button */}
-            <label className="flex-col items-center justify-center border-2 border-dashed border-default rounded-md p-6 cursor-pointer hover:bg-muted transition-colors w-full" style={{ minHeight: '120px' }}>
-              <CloudUpload size={28} className="text-tertiary mb-2" />
-              <strong className="text-sm text-center text-primary">{files.length ? `${files.length} file ready` : 'Click to select file'}</strong>
-              <input type="file" className="hidden" multiple accept="image/*,.pdf" onChange={(e) => setFiles(Array.from(e.target.files || []))} />
-            </label>
+
+            {/* Choose: pick a file, or capture live with the camera */}
+            <div className="flex gap-2 mb-3" role="tablist" aria-label="Document input method">
+              <button
+                type="button"
+                onClick={() => switchInputMode('file')}
+                className={`flex items-center justify-center gap-2 text-sm font-bold px-3 py-2 rounded-md border transition-colors w-full ${inputMode === 'file' ? 'bg-muted border-accent text-primary' : 'border-default text-secondary hover:bg-muted'}`}
+              >
+                <CloudUpload size={16} /> Upload File
+              </button>
+              <button
+                type="button"
+                onClick={() => switchInputMode('camera')}
+                className={`flex items-center justify-center gap-2 text-sm font-bold px-3 py-2 rounded-md border transition-colors w-full ${inputMode === 'camera' ? 'bg-muted border-accent text-primary' : 'border-default text-secondary hover:bg-muted'}`}
+              >
+                <Camera size={16} /> Capture Live
+              </button>
+            </div>
+
+            {inputMode === 'file' ? (
+              /* Styled File Input to hide ugly default browser button */
+              <label className="flex-col items-center justify-center border-2 border-dashed border-default rounded-md p-6 cursor-pointer hover:bg-muted transition-colors w-full" style={{ minHeight: '120px' }}>
+                <CloudUpload size={28} className="text-tertiary mb-2" />
+                <strong className="text-sm text-center text-primary">{files.length ? `${files.length} file ready` : 'Click to select file'}</strong>
+                <input type="file" className="hidden" multiple accept="image/*,.pdf" onChange={(e) => setFiles(Array.from(e.target.files || []))} />
+              </label>
+            ) : (
+              <div className="border-2 border-dashed border-default rounded-md p-3 w-full" style={{ minHeight: '120px' }}>
+                {cameraError ? (
+                  <div className="flex-col items-center justify-center text-center gap-2 py-4">
+                    <p className="text-sm text-danger">{cameraError}</p>
+                    <button type="button" className="btn-secondary text-sm" onClick={startCameraStream}>Try Again</button>
+                  </div>
+                ) : capturedPreviewUrl ? (
+                  <div className="flex-col items-center gap-2">
+                    <img src={capturedPreviewUrl} alt="Captured document" className="rounded-md w-full" style={{ maxHeight: 220, objectFit: 'contain' }} />
+                    <div className="flex gap-2 w-full">
+                      <button type="button" className="btn-secondary text-sm w-full flex items-center justify-center gap-2" onClick={retakePhoto}>
+                        <RotateCcw size={14} /> Retake
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-col items-center gap-2">
+                    <div className="relative w-full rounded-md overflow-hidden bg-black" style={{ minHeight: 180 }}>
+                      <video ref={videoRef} playsInline muted className="w-full" style={{ maxHeight: 220, display: cameraActive ? 'block' : 'none' }} />
+                      {!cameraActive && <p className="text-sm text-secondary text-center py-8">Starting camera…</p>}
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-primary text-sm w-full flex items-center justify-center gap-2"
+                      onClick={capturePhoto}
+                      disabled={!cameraActive}
+                    >
+                      <Camera size={16} /> Capture Photo
+                    </button>
+                  </div>
+                )}
+                <canvas ref={canvasRef} className="hidden" />
+              </div>
+            )}
           </div>
 
           <div>

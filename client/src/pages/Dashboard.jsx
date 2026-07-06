@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { ArrowDown } from 'lucide-react';
+import { ArrowDown, FileText, AlertTriangle } from 'lucide-react';
 import { api } from '../utils/api';
+import StatsCard from '../components/StatsCard';
 
 /**
  * Dashboard
@@ -49,7 +50,7 @@ export default function Dashboard() {
         const dateString = d.toISOString().split('T')[0];
         const match = dbTrend.find(t => t.date === dateString);
         return {
-          dayLabel: d.toLocaleDateString('en-US', { weekday: 'short' }).charAt(0),
+          dayLabel: d.toLocaleDateString('en-US', { weekday: 'short' }),
           count: match ? match.count : 0
         };
       });
@@ -70,14 +71,18 @@ export default function Dashboard() {
 
       {/* Top Metrics Row - Scaled fluidly across the view area */}
       <div className="grid gap-4 w-full" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
-        <div className="panel">
-          <p className="text-secondary text-sm mb-2">Documents today</p>
-          <span className="text-3xl font-bold">{stats.totalDocuments}</span>
-        </div>
-        <div className="panel">
-          <p className="text-secondary text-sm mb-2">Open alerts</p>
-          <span className="text-3xl font-bold text-danger">{stats.totalAlerts}</span>
-        </div>
+        <StatsCard
+          label="Documents today"
+          value={stats.totalDocuments}
+          delta={stats.totalDocuments > 0 ? `${stats.totalDocuments} processed` : 'Awaiting uploads'}
+          icon={FileText}
+        />
+        <StatsCard
+          label="Open alerts"
+          value={stats.totalAlerts}
+          delta={stats.totalAlerts > 0 ? 'Action required' : 'All clear'}
+          icon={AlertTriangle}
+        />
       </div>
 
       {/* Verification Coverage Bar - Full width row expansion */}

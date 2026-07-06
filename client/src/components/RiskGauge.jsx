@@ -18,7 +18,7 @@ export default function RiskGauge({ value = 0, label = 'Risk Score' }) {
   const stroke = circumference - (clamped / 100) * circumference;
 
   // Tone thresholds (kept here so the component is self-documenting)
-  const tone = clamped >= 70 ? 'low' : clamped >= 40 ? 'medium' : 'high';
+  const tone = clamped >= 75 ? 'low' : clamped >= 40 ? 'medium' : 'high';
 
   return (
     <div className="risk-gauge" data-tone={tone} aria-label={`Risk score ${clamped} out of 100`}>

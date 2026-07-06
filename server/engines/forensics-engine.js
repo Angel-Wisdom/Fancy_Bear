@@ -98,11 +98,41 @@ export function inspectMetadata(buffer) {
   try {
     const metadata = ExifReader.load(buffer);
     const suspicious = [];
+
+    // Editing-software signature (JPEG/PNG EXIF + TIFF/XMP).
+    // Photoshop, GIMP, Canva, Paint, Affinity Photo, Lightroom, etc.
     const software = metadata?.Software?.description || metadata?.Software?.value;
-    if (software && /photoshop|gimp|canva|paint/i.test(String(software))) {
+    if (software && /photoshop|gimp|canva|paint|affinity|lightroom| Capture/i.test(String(software))) {
       suspicious.push(`Editing software signature: ${software}`);
     }
-    return { metadata, suspicious, flagged: suspicious.length > 0 };
+
+    // PDF Producer / Creator fields — ExifReader surfaces these for PDFs.
+    // PDFs typically don't have a Software tag, but the Producer and Creator
+    // fields carry the same information (e.g., "Adobe PDF library",
+    // "Microsoft: Print To PDF", "Adobe InDesign 18.0 (Macintosh)").
+    const producer = metadata?.Producer?.description || metadata?.Producer?.value;
+    if (producer && /photoshop|gimp|canva|paint|indesign|illustrator|acrobat.*(pro|edit)/i.test(String(producer))) {
+      suspicious.push(`PDF Producer hints at editing tool: ${producer}`);
+    }
+    const creator = metadata?.Creator?.description || metadata?.Creator?.value;
+    if (creator && /photoshop|gimp|canva|paint|indesign|illustrator/i.test(String(creator))) {
+      suspicious.push(`PDF Creator hints at editing tool: ${creator}`);
+    }
+
+    // XMP MetadataDate vs CreateDate mismatch — if the doc was edited
+    // after creation, MetadataDate > CreateDate. This is a soft signal
+    // (legitimate re-saves also trip it), so don't escalate to suspicious
+    // on its own — surface it in metadata for the reviewer.
+    const createDate = metadata?.CreateDate?.description || metadata?.CreateDate?.value;
+    const modifyDate = metadata?.ModifyDate?.description || metadata?.ModifyDate?.value;
+
+    return {
+      metadata,
+      suspicious,
+      createDate: createDate || null,
+      modifyDate: modifyDate || null,
+      flagged: suspicious.length > 0,
+    };
   } catch {
     return { metadata: {}, suspicious: ['Metadata unavailable'], flagged: false };
   }

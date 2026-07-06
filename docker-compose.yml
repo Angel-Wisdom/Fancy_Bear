@@ -3,15 +3,15 @@
 #  One command to start everything:  docker compose up --build
 #
 #  Services:
-#    aadhaar   → Flask Aadhaar QR microservice  :5000 (internal)
-#    server    → Node.js Express API             :3001
-#    client    → React / Vite dev server         :5173  ← open this in browser
+#    aadhaar   → Flask Aadhaar QR + Forensics microservice :5000 (internal)
+#    server    → Node.js Express API                       :3001
+#    client    → React / Vite dev server                   :5173  ← open this in browser
 # ═══════════════════════════════════════════════════════════════
 version: '3.9'
 
 services:
 
-  # ── 1. Flask Aadhaar QR Microservice ──────────────────────────
+  # ── 1. Flask Aadhaar + Forensics Microservice ───────────────
   aadhaar:
     build:
       context: ./aadhar
@@ -21,6 +21,9 @@ services:
     # Not exposed to host — only the Node server needs to reach it
     expose:
       - "5000"
+    # Mount source for live editing of forensics.py / app.py
+    volumes:
+      - ./aadhar:/app
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/')"]
       interval: 10s
@@ -28,7 +31,7 @@ services:
       retries: 5
       start_period: 15s
 
-  # ── 2. Node.js Express API Server ─────────────────────────────
+  # ── 2. Node.js Express API Server ───────────────────────────
   server:
     build:
       context: ./server
@@ -42,10 +45,18 @@ services:
       - AADHAAR_SERVICE_HOST=aadhaar
       - AADHAAR_SERVICE_PORT=5000
       - PORT=3001
-      - AUTH_DISABLED=true 
+      # Auth: set to "true" ONLY for local dev without JWT.
+      # Default is false so the JWT auth flow is exercised in Docker.
+      - AUTH_DISABLED=${AUTH_DISABLED:-false}
       - SURAKSHA_DB_PATH=/app/data/suraksha.db
+      # Crypto secrets — override in .env or via shell env.
+      # The fallbacks here are dev-only placeholders.
+      - JWT_SECRET=${JWT_SECRET:-suraksha-dev-secret-change-me}
+      - AES_SECRET=${AES_SECRET:-suraksha-aes-secret-change-me}
+      - HMAC_SECRET=${HMAC_SECRET:-suraksha-hmac-secret-change-me}
+      - AADHAAR_HASH_SALT=${AADHAAR_HASH_SALT:-suraksha-aadhaar-salt-dev-only}
     volumes:
-      # Persist the JSON data store across restarts
+      # Persist the SQLite database across restarts
       - ./server/data:/app/data
       - ./server:/app
       - /app/node_modules
@@ -53,7 +64,7 @@ services:
       aadhaar:
         condition: service_healthy
 
-  # ── 3. React / Vite Client Dev Server ─────────────────────────
+  # ── 3. React / Vite Client Dev Server ───────────────────────
   client:
     build:
       context: ./client
@@ -65,7 +76,7 @@ services:
     environment:
       # Vite proxy points to the Node server by Docker service name
       - VITE_API_TARGET=http://server:3001
-      - VITE_AUTH_DISABLED=true
+      - VITE_AUTH_DISABLED=${VITE_AUTH_DISABLED:-false}
     volumes:
       # Mount source for hot-reload — changes reflect instantly
       - ./client/src:/app/src

@@ -8,7 +8,10 @@ router.use(verifyToken);
 // 1. Top-line metrics (Current Day & Unresolved)
 router.get('/stats', (req, res) => {
   const db = getDb();
-  const totalDocuments = db.prepare("SELECT COUNT(*) AS count FROM documents WHERE DATE(created_at) = DATE('now')").get().count;
+  // Use localtime so the dashboard's 'today' matches the user's timezone
+  // (SQLite's DATE('now') defaults to UTC, which would show stale data
+  // in the morning in IST). 
+  const totalDocuments = db.prepare("SELECT COUNT(*) AS count FROM documents WHERE DATE(created_at) = DATE('now', 'localtime')").get().count;
   const totalAlerts = db.prepare("SELECT COUNT(*) AS count FROM alerts WHERE is_resolved = 0").get().count;
   res.json({ totalDocuments, totalAlerts });
 });
@@ -20,7 +23,7 @@ router.get('/coverage', (req, res) => {
   const coverage = db.prepare(`
     SELECT COALESCE(tier, 'unverified') as tier, COUNT(*) as count 
     FROM verification_results 
-    WHERE DATE(created_at) = DATE('now') 
+    WHERE DATE(created_at) = DATE('now', 'localtime') 
     GROUP BY tier
   `).all();
   res.json({ coverage });

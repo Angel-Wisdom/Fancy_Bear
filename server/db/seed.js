@@ -378,6 +378,18 @@ async function seed() {
             password_hash: bcrypt.hashSync('suraksha@123', salt),
             full_name: 'Priya Sharma', role: 'verifier',
             email: 'priya.sharma@bank.com'
+        },
+        {
+            id: 'senior-user', username: 'senior1',
+            password_hash: bcrypt.hashSync('suraksha@456', salt),
+            full_name: 'Rahul Verma', role: 'verifier',
+            email: 'rahul.verma@bank.com'
+        },
+        {
+            id: 'manager-user', username: 'manager1',
+            password_hash: bcrypt.hashSync('suraksha@789', salt),
+            full_name: 'Anita Gupta', role: 'verifier',
+            email: 'anita.gupta@bank.com'
         }
     ];
 
@@ -561,9 +573,11 @@ async function seed() {
     // ── Done ────────────────────────────────────────────────
     console.log('\n✅ Seed complete!');
     console.log('   Demo login credentials:');
-    console.log('   ┌──────────────────────────────────────────┐');
-    console.log('   │  junior1 / suraksha@123  (Verifier)      │');
-    console.log('   └──────────────────────────────────────────┘');
+    console.log('   ┌────────────────────────────────────────────────────┐');
+    console.log('   │  junior1  / suraksha@123  (Priya Sharma  — Verifier) │');
+    console.log('   │  senior1  / suraksha@456  (Rahul Verma   — Verifier) │');
+    console.log('   │  manager1 / suraksha@789  (Anita Gupta   — Verifier) │');
+    console.log('   └────────────────────────────────────────────────────┘');
 
     closeDb();
 }

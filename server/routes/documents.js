@@ -9,10 +9,15 @@ import { inspectMetadata, analyzePixelForensics } from '../engines/forensics-eng
 import { verifyDocument } from '../engines/document-verification-engine.js';
 import { signReport } from '../engines/crypto-engine.js';
 import { writeAuditEntry } from '../utils/audit.js';
+import { getDocTypeMeta } from '../engines/doc-types.js';
 import path from 'node:path';
 import fs from 'node:fs';
 
-const upload = multer({ storage: multer.memoryStorage() });
+// 25 MB upload limit — matches the `max_upload_size_mb` system setting.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
 const router = Router();
 
 router.use(verifyToken);
@@ -127,9 +132,14 @@ function storeVerification({ document, result, userId, runDurationMs }) {
     },
   };
 
+  // Resolve the canonical tier for this doc type so the dashboard
+  // verification-coverage bar can group results by tier1/tier2/tier3.
+  const docMeta = getDocTypeMeta(document.doc_type);
+  const tier = docMeta?.tier || null;
+
   db.prepare(`
-    INSERT INTO verification_results (id, document_id, customer_id, verification_type, status, overall_score, details_json, run_by, run_duration_ms, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO verification_results (id, document_id, customer_id, verification_type, status, overall_score, details_json, run_by, run_duration_ms, created_at, tier)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     document.id,
@@ -141,6 +151,7 @@ function storeVerification({ document, result, userId, runDurationMs }) {
     userId,
     runDurationMs,
     createdAt,
+    tier,
   );
 
   for (const finding of result.findings.filter((item) => ['high', 'critical'].includes(item.severity))) {

@@ -4,24 +4,47 @@ import { api } from '../utils/api';
 import DocumentsTab from '../components/DocumentsTab';
 import FinancialTab from '../components/FinancialTab';
 import LandTab from '../components/LandTab';
+import CrossDocumentTab from '../components/CrossDocumentTab';
 
 export default function ApplicationWorkspace() {
   const { id } = useParams();
   const [customer, setCustomer] = useState(null);
   const [activeTab, setActiveTab] = useState('documents');
   const [loading, setLoading] = useState(true);
+  const [reportLoading, setReportLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
-    api.get(`/api/customers`)
-      .then(res => {
-        const found = (res.customers || res || []).find(c => c.id === id);
-        if (found) setCustomer(found);
-        else setCustomer(null);
-      })
-      .catch(console.error)
+    api.get(`/api/customers/${id}`)
+      .then(res => setCustomer(res.customer || null))
+      .catch(() => setCustomer(null))
       .finally(() => setLoading(false));
   }, [id]);
+
+  function handleGenerateReport() {
+    setReportLoading(true);
+    // Open the PDF in a new tab so the user keeps their workspace context.
+    const token = localStorage.getItem('suraksha_token');
+    // Use fetch so we can attach the Authorization header (window.open can't).
+    fetch(`/api/reports/${id}/pdf`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(response => {
+        if (!response.ok) throw new Error(`Report fetch failed: ${response.status}`);
+        return response.blob();
+      })
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        // Revoke the URL after the new tab has had time to load it.
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      })
+      .catch(err => {
+        console.error('Report generation failed:', err);
+        alert('Could not generate the PDF report. Please try again.');
+      })
+      .finally(() => setReportLoading(false));
+  }
 
   return (
     <div className="flex-col w-full h-full min-h-0">
@@ -38,10 +61,11 @@ export default function ApplicationWorkspace() {
         </div>
         <button
           className="btn-primary shrink-0"
-          disabled={!customer}
-          title={!customer ? 'Applicant must load first' : 'Generate report'}
+          disabled={!customer || reportLoading}
+          title={!customer ? 'Applicant must load first' : 'Download PDF report'}
+          onClick={handleGenerateReport}
         >
-          Generate report
+          {reportLoading ? 'Generating…' : 'Generate report'}
         </button>
       </div>
 
@@ -70,14 +94,7 @@ export default function ApplicationWorkspace() {
         {activeTab === 'documents' && <DocumentsTab customerId={id} />}
         {activeTab === 'financial' && <FinancialTab customerId={id} />}
         {activeTab === 'land' && <LandTab customerId={id} />}
-
-        {/* Placeholder Shells for Phase 5 continued work */}
-        {activeTab === 'findings' && (
-          <div className="panel p-8 text-center flex-col items-center justify-center gap-2 h-full">
-            <h3 className="font-bold text-primary">Cross-Document Correlation</h3>
-            <p className="text-secondary">Awaiting Day 3 correlation engine integration.</p>
-          </div>
-        )}
+        {activeTab === 'findings' && <CrossDocumentTab customerId={id} />}
       </div>
     </div>
   );

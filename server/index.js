@@ -21,7 +21,14 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, service: 'suraksha-server', mode: 'offline' });
+  // Verify DB connectivity — a 200 here means the API + DB are both alive.
+  try {
+    const db = getDb();
+    db.prepare('SELECT 1 AS one').get();
+    res.json({ ok: true, service: 'suraksha-server', mode: 'offline', db: 'connected' });
+  } catch (err) {
+    res.status(503).json({ ok: false, service: 'suraksha-server', mode: 'offline', db: 'error', error: err.message });
+  }
 });
 
 app.use('/api/auth', authRoutes);

@@ -2,6 +2,20 @@ import { useEffect, useState } from 'react';
 import { api } from '../utils/api';
 import AlertBadge from './AlertBadge';
 
+function parseOwnershipChain(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export default function LandTab({ customerId }) {
   const [record, setRecord] = useState(null);
 
@@ -12,13 +26,13 @@ export default function LandTab({ customerId }) {
       .catch(() => setRecord(null));
   }, [customerId]);
 
-  const ownershipChain = Array.isArray(record?.ownership_chain_json) ? record.ownership_chain_json : [];
+  const ownershipChain = parseOwnershipChain(record?.ownership_chain_json);
   const issues = Array.isArray(record?.issues) ? record.issues : [];
 
   return (
     <div className="flex-col gap-4 w-full">
       <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
-        
+
         {/* Record Details */}
         <div className="panel flex-col gap-3">
           <div className="font-bold text-sm uppercase tracking-wide text-secondary mb-2">Land Record Details</div>
@@ -61,8 +75,22 @@ export default function LandTab({ customerId }) {
         <div className="flex-col gap-2">
           {ownershipChain.length ? ownershipChain.map((node, index) => (
             <div key={`${node.owner}-${index}`} className="flex justify-between items-center py-2 border-b border-subtle">
-              <strong className="text-sm">{node.owner}</strong>
-              <span className="text-xs text-secondary">{node.date || 'Historical transfer'}</span>
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-xs text-secondary tabular-nums shrink-0">#{index + 1}</span>
+                <strong className="text-sm truncate">{node.owner || 'Unknown'}</strong>
+                {node.deed_number && (
+                  <code className="text-xs text-tertiary truncate">{node.deed_number}</code>
+                )}
+              </div>
+              <span className="text-xs text-secondary shrink-0">
+                {node.from && node.to
+                  ? `${node.from} → ${node.to}`
+                  : node.from
+                  ? `from ${node.from}`
+                  : node.to
+                  ? `until ${node.to}`
+                  : 'Current owner'}
+              </span>
             </div>
           )) : <p className="text-sm text-secondary">No ownership chain data available.</p>}
         </div>

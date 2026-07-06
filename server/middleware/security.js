@@ -11,7 +11,9 @@ export function applySecurity(app) {
 
   app.use(cors({
     origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
-    credentials: true,
+    // We use Bearer tokens in the Authorization header (not cookies), so
+    // credentials: true is unnecessary and weakens the CORS posture.
+    credentials: false,
   }));
 
   app.use(rateLimit({

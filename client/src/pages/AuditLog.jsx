@@ -1,17 +1,32 @@
 import { useEffect, useState } from 'react';
 import { api } from '../utils/api';
 
+function formatDetails(value) {
+  if (!value) return '—';
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Object.keys(parsed).length ? JSON.stringify(parsed) : value;
+    } catch {
+      return value;
+    }
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 export default function AuditLog() {
   const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Make sure this matches the route you added above
-    api.get('/api/audit-logs') 
-      .then(res => {
-        console.log("Audit Logs Response:", res); // Debug check
-        setLogs(res.logs || []);
-      })
-      .catch(console.error);
+    api.get('/api/audit-logs')
+      .then(res => setLogs(res.logs || []))
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, []);
 
   return (
@@ -28,14 +43,26 @@ export default function AuditLog() {
             </tr>
           </thead>
           <tbody>
-            {logs.map(log => (
-              <tr key={log.id}>
-                <td className="text-xs text-secondary">{log.created_at}</td>
-                <td><code className="text-xs">{log.action}</code></td>
-                <td className="text-xs font-mono">{log.resource_id}</td>
-                <td className="text-xs text-secondary truncate max-w-xs">{log.details}</td>
+            {loading ? (
+              <tr>
+                <td colSpan="4" className="py-4 text-center text-secondary text-sm">Loading audit trail…</td>
               </tr>
-            ))}
+            ) : logs.length ? (
+              logs.map(log => (
+                <tr key={log.id}>
+                  <td className="text-xs text-secondary tabular-nums">{log.created_at}</td>
+                  <td><code className="text-xs">{log.action}</code></td>
+                  <td className="text-xs font-mono">{log.resource_id || '—'}</td>
+                  <td className="text-xs text-secondary truncate" style={{ maxWidth: '320px' }} title={formatDetails(log.details_json)}>
+                    {formatDetails(log.details_json)}
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="4" className="py-4 text-center text-secondary text-sm">No audit entries yet.</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

@@ -42,7 +42,7 @@ export default function Sidebar({ collapsed = false }) {
             end={to === '/'}
             className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
           >
-            <Icon size={16} className="flex-shrink-0" />
+            <Icon size={16} className="shrink-0" />
             {!collapsed && <span className="truncate">{label}</span>}
           </NavLink>
         ))}

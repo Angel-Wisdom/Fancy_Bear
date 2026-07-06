@@ -51,8 +51,8 @@ async function extractImageText(buffer) {
       pages: 1,
     };
   } catch (err) {
-    console.error("TESSERACT CRITICAL ERROR:", err);
-    throw err; 
+    console.error('[ocr] Tesseract failure:', err.message || err);
+    throw err;
   } finally {
     await worker.terminate();
   }

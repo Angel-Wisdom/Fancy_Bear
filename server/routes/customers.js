@@ -12,7 +12,7 @@ router.use(verifyToken);
 router.get('/', (req, res) => {
   const db = getDb();
   const customers = db.prepare(`
-    SELECT id, full_name, date_of_birth, city, state, occupation, annual_income, risk_score
+    SELECT id, full_name, date_of_birth, city, state, occupation, annual_income, risk_score, created_at
     FROM customers
     ORDER BY full_name ASC
     LIMIT 200

@@ -133,6 +133,15 @@ function compareApplicantName(text, customer) {
 
 function scoreFindings(findings) {
   const penalty = findings.reduce((sum, finding) => {
+    // C2PA content-credentials presence is a structured, purpose-built
+    // provenance record embedded by the generating/editing tool itself --
+    // unlike the other pixel-forensics checks (which are statistical
+    // heuristics with some false-positive risk), a hit here is
+    // near-definitive proof of AI-generation or edit history. Weight it
+    // above a standard "critical" finding so it reliably pushes a document
+    // into fail on its own, without needing every other critical finding
+    // in the system to also become this severe.
+    if (finding.code === 'pixel.content_credentials_detected') return sum + 48;
     if (finding.severity === 'critical') return sum + 35;
     if (finding.severity === 'high') return sum + 24;
     if (finding.severity === 'medium') return sum + 13;
@@ -445,7 +454,7 @@ export function verifyDocument({ document, customer, ocr, metadata, pixelForensi
   }
 
   const score = scoreFindings(findings);
-  const status = forceFail ? 'fail' : score >= 82 ? 'pass' : score >= 55 ? 'warning' : 'fail';
+  const status = forceFail ? 'fail' : score >= 85 ? 'pass' : score >= 55 ? 'warning' : 'fail';
 
   return {
     status,

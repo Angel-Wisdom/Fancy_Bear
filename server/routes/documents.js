@@ -222,7 +222,8 @@ router.post('/upload', upload.array('files'), async (req, res) => {
     // ── Run OCR + pixel forensics + Aadhaar QR scan in parallel ──
     const isAadhaarCard = docType === 'aadhaar_card';
     const [extracted, pixelForensics, qrScan] = await Promise.all([
-      extractTextFromBuffer(file.buffer, file.originalname, file.mimetype),
+      extractTextFromBuffer(file.buffer, file.originalname, file.mimetype,
+        isAadhaarCard ? { lang: 'eng+hin', psm: 3 } : {}),
       analyzePixelForensics(file.buffer, file.mimetype),
       isAadhaarCard
         ? scanAadhaarQr(file.buffer, file.mimetype)
@@ -235,12 +236,20 @@ router.post('/upload', upload.array('files'), async (req, res) => {
     let ocrTextForVerification = extracted.text;
 
     if (isAadhaarCard && extracted.engine === 'tesseract.js') {
-      const cleaned = cleanAadhaarOcrText(extracted.text);
+      const isBilingual = extracted.ocrLang === 'eng+hin';
+      const cleaned = cleanAadhaarOcrText(extracted.text, isBilingual);
       ocrTextToStore = cleaned.text;
-      // Also pass cleaned text to verification engine so it works with
-      // garbage-free text for field extraction and name detection.
       ocrTextForVerification = cleaned.text;
     }
+
+    // ── Aadhaar number recovery from raw OCR ──
+    // Tesseract often misses the 12-digit number when it's adjacent
+    // to garbled Hindi text. Instead of raw digit hunting (which produces
+    // false positives), we rely on:
+    //   1. eng+hin bilingual Tesseract (reads Devanagari properly)
+    //   2. QR code data (ground truth, already cross-checked)
+    
+    let recoveredAadhaar = null;
 
     const id = randomUUID();
 

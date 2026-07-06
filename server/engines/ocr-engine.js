@@ -78,15 +78,21 @@ async function extractPdfText(buffer) {
   };
 }
 
-async function extractImageText(buffer) {
+async function extractImageText(buffer, options = {}) {
   // Preprocess image for better OCR accuracy
   const preprocessed = await preprocessImageForOcr(buffer);
   const preprocessedSizeKB = Math.round(preprocessed.length / 1024);
   const originalSizeKB = Math.round(buffer.length / 1024);
-  console.log(`[ocr] Image preprocessing: ${originalSizeKB}KB → ${preprocessedSizeKB}KB (PNG)`);
+  const lang = options.lang || 'eng';
+  console.log(`[ocr] Image preprocessing: ${originalSizeKB}KB → ${preprocessedSizeKB}KB (PNG), lang: ${lang}`);
 
-  const worker = await createWorker('eng');
+  const worker = await createWorker(lang);
   try {
+    // PSM 3 = fully automatic page segmentation (best default for
+    // mixed-layout documents like Aadhaar cards with text + QR + photo)
+    if (options.psm) {
+      await worker.setParameters({ tessedit_pageseg_mode: String(options.psm) });
+    }
     const result = await worker.recognize(preprocessed);
     return {
       text: (result.data.text || '').trim(),
@@ -94,6 +100,7 @@ async function extractImageText(buffer) {
       engine: 'tesseract.js',
       pages: 1,
       preprocessed: true,
+      ocrLang: lang,
     };
   } catch (err) {
     console.error('[ocr] Tesseract failure:', err.message || err);
@@ -103,7 +110,7 @@ async function extractImageText(buffer) {
   }
 }
 
-export async function extractTextFromBuffer(buffer, fileName = 'document', mimeType = '') {
+export async function extractTextFromBuffer(buffer, fileName = 'document', mimeType = '', options = {}) {
   try {
     if (isPdf(fileName, mimeType)) {
       const extracted = await extractPdfText(buffer);
@@ -111,7 +118,7 @@ export async function extractTextFromBuffer(buffer, fileName = 'document', mimeT
     }
 
     if (isImage(fileName, mimeType)) {
-      const extracted = await extractImageText(buffer);
+      const extracted = await extractImageText(buffer, options);
       return { ...extracted, fields: { source: fileName, mimeType } };
     }
   } catch (error) {

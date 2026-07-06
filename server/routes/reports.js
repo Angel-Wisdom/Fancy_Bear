@@ -286,18 +286,24 @@ async function buildPdfReport({ report, details, documents, alerts, applicationI
           const hasEvidence = finding.evidence;
           const evidenceStr = hasEvidence ? pdfSafe(safeStringifyEvidence(finding.evidence)) : '';
 
+          // Layout: Badge (70pt) | Code (155pt) | Message (rest)
+          const codeColX = 128;
+          const codeColW = 155;
+          const msgColX = 290;
+          const msgColW = contentWidth - (msgColX - 50); // 50 = left margin
+
           // Compute heights for the code + message row (rendered side by side)
-          const codeHeight = doc.heightOfString(codeText, { width: 180 });
-          const messageHeight = doc.heightOfString(messageText, { width: contentWidth - 270 });
+          const codeHeight = doc.heightOfString(codeText, { width: codeColW });
+          const messageHeight = doc.heightOfString(messageText, { width: msgColW });
           const rowHeight = Math.max(codeHeight, messageHeight, 14); // min 14 (badge height)
 
-          // Compute evidence height if present
+          // Compute evidence height if present — render full width under the row
           let evidenceHeight = 0;
           if (evidenceStr && evidenceStr !== '{}') {
-            evidenceHeight = doc.heightOfString(`  Evidence: ${evidenceStr}`, { width: contentWidth - 80 });
+            evidenceHeight = doc.heightOfString(`Evidence: ${evidenceStr}`, { width: contentWidth - 80 });
           }
 
-          const totalBlockHeight = rowHeight + 4 + evidenceHeight + 4; // row + gap + evidence + gap
+          const totalBlockHeight = rowHeight + 6 + evidenceHeight + 2;
 
           // Page break if this block won't fit
           if (y + totalBlockHeight > pageHeight - 80) {
@@ -307,39 +313,39 @@ async function buildPdfReport({ report, details, documents, alerts, applicationI
           // Severity tag (badge)
           const [r, g, b] = severityColor(doc, finding.severity);
           doc
-            .roundedRect(50, y, 70, 14, 3)
+            .roundedRect(50, y, 72, 14, 3)
             .fillColor([r, g, b])
             .fill();
           doc
             .fillColor([0xff, 0xff, 0xff])
-            .fontSize(8)
+            .fontSize(7.5)
             .font('Helvetica-Bold')
-            .text(String(finding.severity || 'info').toUpperCase(), 50, y + 3, { width: 70, align: 'center' });
+            .text(String(finding.severity || 'info').toUpperCase(), 50, y + 3, { width: 72, align: 'center' });
 
-          // Code (left column)
+          // Code (middle column)
           doc
             .fillColor([0x55, 0x55, 0x55])
             .font('Helvetica')
-            .fontSize(8)
-            .text(codeText, 130, y, { width: 180 });
+            .fontSize(7.5)
+            .text(codeText, codeColX, y + 1, { width: codeColW });
 
-          // Message (right column)
+          // Message (right column — wider now)
           doc
             .fillColor([0x22, 0x22, 0x22])
-            .fontSize(9)
-            .text(messageText, 320, y, { width: contentWidth - 270 });
+            .fontSize(8.5)
+            .text(messageText, msgColX, y + 1, { width: msgColW });
 
-          // Advance y by the actual row height (not hardcoded 16)
-          y += rowHeight + 4;
+          // Advance y by the actual row height
+          y += rowHeight + 6;
 
-          // Evidence (indented, on the next line)
+          // Evidence (full width, indented)
           if (evidenceStr && evidenceStr !== '{}') {
             doc
-              .fillColor([0x88, 0x88, 0x88])
-              .fontSize(8)
+              .fillColor([0x99, 0x99, 0x99])
+              .fontSize(7)
               .font('Helvetica-Oblique')
-              .text(`  Evidence: ${evidenceStr}`, 130, y, { width: contentWidth - 80 });
-            y += evidenceHeight + 4;
+              .text(`Evidence: ${evidenceStr}`, 80, y, { width: contentWidth - 30 });
+            y += evidenceHeight + 2;
           }
         }
       }

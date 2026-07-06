@@ -273,12 +273,18 @@ async function flaskQrFallback(buffer, mimeType) {
 // ── 2. OCR Text Cleanup ───────────────────────────────────────
 
 /**
- * Aadhaar cards are bilingual (Hindi + English). Tesseract with 'eng'
- * language turns the Hindi Devanagari script into garbled Latin-letter
- * noise (e.g. "Afeof said", "ARR Shin E", "JTHUTY").
+ * Aadhaar cards are bilingual (Hindi + English).
  *
- * This function removes those garbage lines and returns only the
- * meaningful English text (name, address, DOB, Aadhaar markers, etc.).
+ * With eng+hin Tesseract (v2.3+): Hindi text is proper Devanagari,
+ * not garbled Latin. The cleanup now focuses on:
+ *  - Removing stray single-char lines and non-printable noise
+ *  - Keeping both English and Devanagari content (both are valid)
+ *  - Filtering the trailing noise that Tesseract sometimes produces
+ *    from the card edges (single characters, symbols)
+ *
+ * With eng-only Tesseract (legacy fallback): Hindi text becomes
+ * garbled Latin noise. The old aggressive filter is applied to
+ * strip these garbage lines.
  *
  * Returns { text: string, removedLines: number }.
  */
@@ -309,7 +315,7 @@ const NAME_LINE_RE = /\b[A-Z][a-z]{1,}(\s+[A-Z][a-z]{1,}){0,4}\b/;
 // Address-like: contains known address words
 const ADDRESS_WORD_RE = /road|street|nagar|colony|west|east|north|south|pvt|ltd|chs|apartment|flat|room|building|plot|sector|block|milap/i;
 
-export function cleanAadhaarOcrText(rawText) {
+export function cleanAadhaarOcrText(rawText, bilingual = false) {
   if (!rawText) return { text: '', removedLines: 0 };
 
   const lines = rawText.split('\n');
@@ -320,40 +326,54 @@ export function cleanAadhaarOcrText(rawText) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    // Strip non-ASCII / non-printable characters
-    const cleaned = trimmed.replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!cleaned || cleaned.length < 2) { removed++; continue; }
+    if (bilingual) {
+      // ── eng+hin mode: Hindi is proper Devanagari, keep it ──
+      // Just filter out pure-noise lines (very short, no alphanumeric)
+      const hasLetter = /[a-zA-Z\u0900-\u097F]/.test(trimmed); // Latin or Devanagari
+      const hasDigit = /\d/.test(trimmed);
+      const isTooShort = trimmed.length < 2;
 
-    // 1. Matches a known Aadhaar-field pattern?
-    const matchesPattern = AADHAAR_USEFUL_PATTERNS.some((p) => p.test(cleaned));
+      if (isTooShort || (!hasLetter && !hasDigit)) {
+        removed++;
+        continue;
+      }
 
-    // 2. Contains a plausible name substring?
-    const containsName = NAME_LINE_RE.test(cleaned);
+      // Filter lines that are only stray symbols (no letters or digits)
+      const alphaNumChars = (trimmed.match(/[a-zA-Z\u0900-\u097F0-9]/g) || []).length;
+      if (alphaNumChars < 2) {
+        removed++;
+        continue;
+      }
 
-    // 3. Address-like: known address words present
-    const hasAddressWords = ADDRESS_WORD_RE.test(cleaned);
-
-    // 4. Noise ratio: if > 50% of tokens are single characters, it's garbage
-    const tokens = cleaned.split(/\s+/);
-    const singleCharTokens = tokens.filter((t) => t.length === 1).length;
-    const noiseRatio = tokens.length ? singleCharTokens / tokens.length : 0;
-
-    // 5. Special-char noise: if > 40% of characters are not alphanumeric or space
-    const totalChars = cleaned.length;
-    const noiseChars = (cleaned.match(/[^A-Za-z0-9\s]/g) || []).length;
-    const specialCharRatio = totalChars ? noiseChars / totalChars : 0;
-
-    // Keep line only if it has a genuine Aadhaar signal AND isn't mostly noise
-    const hasSignal = matchesPattern || containsName || hasAddressWords;
-    const isNotNoise = noiseRatio < 0.5 && specialCharRatio < 0.4;
-
-    // Address lines can be long with mixed content — allow higher noise for address
-    const isAddress = hasAddressWords && cleaned.length > 20;
-
-    if (hasSignal && (isNotNoise || isAddress)) {
-      kept.push(cleaned);
+      kept.push(trimmed);
     } else {
-      removed++;
+      // ── eng-only mode: Hindi is garbled Latin noise, aggressive filter ──
+      // Strip non-ASCII / non-printable characters
+      const cleaned = trimmed.replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!cleaned || cleaned.length < 2) { removed++; continue; }
+
+      const matchesPattern = AADHAAR_USEFUL_PATTERNS.some((p) => p.test(cleaned));
+      const containsName = NAME_LINE_RE.test(cleaned);
+      const hasAddressWords = ADDRESS_WORD_RE.test(cleaned);
+
+      const tokens = cleaned.split(/\s+/);
+      const singleCharTokens = tokens.filter((t) => t.length === 1).length;
+      const noiseRatio = tokens.length ? singleCharTokens / tokens.length : 0;
+
+      const totalChars = cleaned.length;
+      const noiseChars = (cleaned.match(/[^A-Za-z0-9\s]/g) || []).length;
+      const specialCharRatio = totalChars ? noiseChars / totalChars : 0;
+
+      const hasSignal = matchesPattern || containsName || hasAddressWords;
+      const isNotNoise = noiseRatio < 0.5 && specialCharRatio < 0.4;
+
+      const isAddress = hasAddressWords && cleaned.length > 20;
+
+      if (hasSignal && (isNotNoise || isAddress)) {
+        kept.push(cleaned);
+      } else {
+        removed++;
+      }
     }
   }
 
